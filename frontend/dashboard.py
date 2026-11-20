@@ -184,6 +184,19 @@ def render_sidebar(bus_stops: Optional[list] = None) -> Tuple[Optional[tuple], O
             end_coords = (e_lat, e_lon)
 
         st.markdown("---")
+        st.markdown("### 🗺️ Map Display")
+        map_theme = st.selectbox(
+            "Base Map Style",
+            ["Dark Matter (Command Center)", "Clean Light", "OpenStreetMap"],
+            index=0,
+            help="Choose the visual styling of Delhi's road base map",
+        )
+        st.session_state["map_theme"] = map_theme
+
+        show_fleet = st.checkbox("Show Live Bus Fleet (Clusters)", value=True)
+        st.session_state["show_bus_fleet"] = show_fleet
+
+        st.markdown("---")
 
         # --- Time-of-day selector ---
         st.markdown("### ⏰ Time of Day")

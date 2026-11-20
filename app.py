@@ -205,6 +205,9 @@ def main():
     # --- Top: Map View ---
     st.markdown("### 🗺️ Live Network & Route Map")
     heatmap_data = traffic_model.get_heatmap_data()
+    map_theme = st.session_state.get("map_theme", "Dark Matter (Command Center)")
+    show_bus_fleet = st.session_state.get("show_bus_fleet", True)
+
     combined_map = create_combined_map(
         route_geojson=route_geojson,
         heatmap_data=heatmap_data,
@@ -213,6 +216,9 @@ def main():
         bus_stops=BUS_STOPS,
         segments=segments,
         traffic_model=traffic_model,
+        bus_telemetry=processed_df,
+        tile_theme=map_theme,
+        show_bus_fleet=show_bus_fleet,
     )
 
     if st_folium is not None:
