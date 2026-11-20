@@ -196,6 +196,10 @@ def render_sidebar(bus_stops: Optional[list] = None) -> Tuple[Optional[tuple], O
         show_fleet = st.checkbox("Show Live Bus Fleet (Clusters)", value=True)
         st.session_state["show_bus_fleet"] = show_fleet
 
+        show_walkshed = st.checkbox("Show Bus Stop Walksheds (500m)", value=False,
+                                     help="Draw 500m walking radius circles around bus stops")
+        st.session_state["show_walkshed"] = show_walkshed
+
         st.markdown("---")
 
         # --- Time-of-day selector ---

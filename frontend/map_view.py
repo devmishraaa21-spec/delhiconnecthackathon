@@ -349,21 +349,70 @@ def create_combined_map(
             icon=folium.Icon(color="red", icon="flag-checkered", prefix="fa"),
         ).add_to(m)
 
-    # --- Bus stop markers ---
+    # --- Bus stop markers with enhanced popups ---
     if bus_stops:
         bus_stop_group = folium.FeatureGroup(name="🚏 Bus Stops", show=False)
+        walkshed_group = folium.FeatureGroup(name="🚶 500m Walkshed Radius", show=False)
+
+        # Pre-compute route counts per stop
+        try:
+            from data.delhi_bus_stops import BUS_ROUTES
+            stop_route_map = {}
+            for route in BUS_ROUTES:
+                for sid in route.get("stop_ids", []):
+                    if sid not in stop_route_map:
+                        stop_route_map[sid] = []
+                    stop_route_map[sid].append(route.get("name", route.get("route_id", "?")))
+        except Exception:
+            stop_route_map = {}
+
         for stop in bus_stops:
+            stop_id = stop.get("stop_id", "")
+            routes_here = stop_route_map.get(stop_id, [])
+            routes_count = len(routes_here)
+            route_names_html = "".join(f"<li style='font-size:11px;'>{r}</li>" for r in routes_here[:5])
+            if routes_count > 5:
+                route_names_html += f"<li style='font-size:11px; color:#94a3b8;'>…and {routes_count - 5} more</li>"
+
+            popup_html = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-width:180px; line-height:1.4;">
+                <div style="background:#0284c7; color:#fff; padding:5px 10px; border-radius:6px 6px 0 0; font-weight:bold; font-size:13px;">
+                    🚏 {stop['name']}
+                </div>
+                <div style="padding:8px 10px; border:1px solid #e2e8f0; border-top:none; border-radius:0 0 6px 6px; background:#fff; font-size:12px;">
+                    <b>Stop ID:</b> {stop_id}<br/>
+                    <b>Coordinates:</b> {stop['lat']:.4f}, {stop['lon']:.4f}<br/>
+                    <b>Routes Served:</b> <span style="color:#0284c7; font-weight:bold;">{routes_count}</span><br/>
+                    {'<b>Bus Lines:</b><ul style="margin:2px 0 0 16px; padding:0;">' + route_names_html + '</ul>' if routes_here else '<span style="color:#94a3b8;">No route data</span>'}
+                </div>
+            </div>
+            """
+
             folium.CircleMarker(
                 location=(stop["lat"], stop["lon"]),
-                radius=5,
+                radius=7,
                 color="#0284c7",
                 fill=True,
                 fill_color="#38bdf8",
-                fill_opacity=0.8,
-                popup=f"<b>🚏 {stop['name']}</b>",
-                tooltip=stop["name"],
+                fill_opacity=0.85,
+                popup=folium.Popup(popup_html, max_width=260),
+                tooltip=f"🚏 {stop['name']} ({routes_count} routes)",
             ).add_to(bus_stop_group)
+
+            # 500m walkshed circle (~0.0045 degrees)
+            folium.Circle(
+                location=(stop["lat"], stop["lon"]),
+                radius=500,
+                color="#0ea5e9",
+                fill=True,
+                fill_color="#0ea5e9",
+                fill_opacity=0.08,
+                weight=1,
+                dash_array="4 4",
+            ).add_to(walkshed_group)
+
         bus_stop_group.add_to(m)
+        walkshed_group.add_to(m)
 
     # Auto-fit bounds if journey planned
     if start_coords and end_coords:
