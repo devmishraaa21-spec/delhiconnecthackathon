@@ -1,10 +1,12 @@
 """
 Map visualization components for the Delhi Bus Traffic Model.
-Uses Folium for interactive map rendering within Streamlit.
+Uses Folium for high-resolution interactive 2D GIS rendering within Streamlit.
 """
 
+from __future__ import annotations
+
 import folium
-from folium.plugins import HeatMap, MarkerCluster, Fullscreen
+from folium.plugins import HeatMap, MarkerCluster, Fullscreen, MiniMap
 from typing import Optional, List, Dict
 import pandas as pd
 
@@ -15,18 +17,32 @@ DEFAULT_ZOOM = 12
 
 # Congestion color palette
 CONGESTION_COLORS = {
-    "free_flow": "#2ecc71",    # green
-    "moderate": "#f1c40f",     # yellow
+    "free_flow": "#2ecc71",    # emerald green
+    "moderate": "#f1c40f",     # amber yellow
     "heavy": "#e67e22",        # orange
-    "severe": "#e74c3c",       # red
+    "gridlock": "#e74c3c",     # red
+    "severe": "#e74c3c",       # red fallback
 }
 
-# Supported tile definitions (free public CDN endpoints with explicit attribution)
+# Free-flow speeds benchmark (km/h)
+FREE_FLOW_BENCHMARKS = {
+    "expressway": 60.0,
+    "arterial": 40.0,
+    "local": 30.0,
+    "congested_zone": 15.0,
+}
+
+# Supported tile definitions
 TILE_CONFIGS = {
     "Dark Matter (Command Center)": {
         "tiles": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         "attr": "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors &copy; <a href='https://carto.com/attributions'>CARTO</a>",
         "name": "🌙 Dark Mode (Command Center)",
+    },
+    "Satellite Aerial (Esri)": {
+        "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "attr": "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+        "name": "🛰️ Satellite Aerial (Esri)",
     },
     "Clean Light": {
         "tiles": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
@@ -36,7 +52,7 @@ TILE_CONFIGS = {
     "OpenStreetMap": {
         "tiles": "OpenStreetMap",
         "attr": "&copy; OpenStreetMap contributors",
-        "name": "🗺️ OpenStreetMap",
+        "name": "🗺️ OpenStreetMap Standard",
     },
 }
 DEFAULT_THEME = "Dark Matter (Command Center)"
@@ -48,22 +64,181 @@ def _get_congestion_color(level: str) -> str:
     return CONGESTION_COLORS.get(level_lower, CONGESTION_COLORS["free_flow"])
 
 
+def _inject_map_control_styles(m: folium.Map):
+    """Inject executive glassmorphic styling into Leaflet map controls."""
+    css = """
+    <style>
+    /* Executive Glassmorphic Leaflet Layer Control */
+    .leaflet-control-layers {
+        background: rgba(15, 23, 42, 0.94) !important;
+        border: 1px solid rgba(255, 107, 53, 0.45) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65), 0 0 16px rgba(255, 107, 53, 0.15) !important;
+        backdrop-filter: blur(16px) !important;
+        color: #f1f5f9 !important;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        font-size: 12px !important;
+        padding: 10px 14px !important;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+
+    .leaflet-control-layers-toggle {
+        background-color: rgba(15, 23, 42, 0.9) !important;
+        border: 1px solid rgba(255, 107, 53, 0.5) !important;
+        border-radius: 10px !important;
+        width: 38px !important;
+        height: 38px !important;
+        background-size: 20px 20px !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+        transition: transform 0.2s ease, border-color 0.2s ease !important;
+    }
+
+    .leaflet-control-layers-toggle:hover {
+        transform: scale(1.06) !important;
+        border-color: #ff9933 !important;
+        box-shadow: 0 0 14px rgba(255, 153, 51, 0.5) !important;
+    }
+
+    .leaflet-control-layers-expanded {
+        padding: 12px 16px !important;
+        min-width: 220px !important;
+        max-width: 280px !important;
+    }
+
+    .leaflet-control-layers-base label,
+    .leaflet-control-layers-overlays label {
+        margin-bottom: 6px !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        cursor: pointer !important;
+        color: #cbd5e1 !important;
+        font-size: 11.5px !important;
+        font-weight: 500 !important;
+        transition: color 0.15s ease !important;
+    }
+
+    .leaflet-control-layers label:hover {
+        color: #ff9933 !important;
+    }
+
+    .leaflet-control-layers input[type="radio"],
+    .leaflet-control-layers input[type="checkbox"] {
+        accent-color: #ff6b35 !important;
+        cursor: pointer !important;
+        width: 15px !important;
+        height: 15px !important;
+        margin: 0 !important;
+    }
+
+    .leaflet-control-layers-separator {
+        border-top: 1px solid rgba(255, 107, 53, 0.3) !important;
+        margin: 10px 0 !important;
+    }
+
+    /* Glassmorphic Zoom Controls (+ / -) */
+    .leaflet-control-zoom {
+        border: 1px solid rgba(255, 107, 53, 0.35) !important;
+        border-radius: 10px !important;
+        overflow: hidden !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    .leaflet-control-zoom a {
+        background: rgba(15, 23, 42, 0.92) !important;
+        color: #ff9933 !important;
+        border-color: rgba(255, 255, 255, 0.1) !important;
+        width: 32px !important;
+        height: 32px !important;
+        line-height: 32px !important;
+        font-size: 16px !important;
+        transition: background 0.2s ease, color 0.2s ease !important;
+    }
+
+    .leaflet-control-zoom a:hover {
+        background: rgba(255, 107, 53, 0.25) !important;
+        color: #ffffff !important;
+    }
+
+    /* Fullscreen Button */
+    .leaflet-control-fullscreen a {
+        background: rgba(15, 23, 42, 0.92) !important;
+        border: 1px solid rgba(255, 107, 53, 0.35) !important;
+        border-radius: 10px !important;
+        color: #ff9933 !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    /* MiniMap */
+    .leaflet-control-minimap {
+        border: 1px solid rgba(255, 107, 53, 0.4) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+        overflow: hidden !important;
+    }
+    </style>
+    """
+    m.get_root().html.add_child(folium.Element(css))
+
+
 def _add_tile_layers(m: folium.Map, active_theme: str = DEFAULT_THEME):
     """Add switchable base tile layers to the map."""
-    for theme_name, conf in TILE_CONFIGS.items():
-        if theme_name != active_theme:
-            folium.TileLayer(
-                tiles=conf["tiles"],
-                attr=conf["attr"],
-                name=conf["name"],
-                control=True,
-            ).add_to(m)
+    pass  # Handled cleanly inside _get_map_with_theme to prevent raw URL name leakage
+
+
+def _add_legend(m: folium.Map):
+    """Add a glassmorphic floating legend control to the map."""
+    legend_html = """
+    <div style="
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 175px;
+        background: rgba(15, 23, 42, 0.88);
+        border: 1px solid rgba(255, 107, 53, 0.4);
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 11px;
+        color: #f1f5f9;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        backdrop-filter: blur(10px);
+        z-index: 9999;
+        line-height: 1.5;
+    ">
+        <b style="color: #ff9933; font-size: 12px; display: block; margin-bottom: 6px; letter-spacing: 0.04em;">
+            🚦 TRAFFIC VELOCITY
+        </b>
+        <div style="display:flex; align-items:center; margin-bottom:3px;">
+            <span style="display:inline-block; width:14px; height:4px; background:#2ecc71; margin-right:8px; border-radius:2px;"></span>
+            <span>Free Flow (&gt;28 km/h)</span>
+        </div>
+        <div style="display:flex; align-items:center; margin-bottom:3px;">
+            <span style="display:inline-block; width:14px; height:4px; background:#f1c40f; margin-right:8px; border-radius:2px;"></span>
+            <span>Moderate (18-28)</span>
+        </div>
+        <div style="display:flex; align-items:center; margin-bottom:3px;">
+            <span style="display:inline-block; width:14px; height:4px; background:#e67e22; margin-right:8px; border-radius:2px;"></span>
+            <span>Heavy (10-18)</span>
+        </div>
+        <div style="display:flex; align-items:center; margin-bottom:6px;">
+            <span style="display:inline-block; width:14px; height:4px; background:#e74c3c; margin-right:8px; border-radius:2px;"></span>
+            <span>Gridlock (&lt;10 km/h)</span>
+        </div>
+        <hr style="border:none; border-top:1px solid rgba(255,255,255,0.12); margin:4px 0 6px 0;">
+        <div style="display:flex; align-items:center;">
+            <span style="display:inline-block; width:10px; height:10px; background:#00f0ff; margin-right:8px; border-radius:50%; box-shadow:0 0 6px #00f0ff;"></span>
+            <span>Planned Route</span>
+        </div>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
 
 
 def _add_bus_fleet_cluster(
     m: folium.Map,
     telemetry_df: pd.DataFrame,
-    max_buses: int = 400,
+    max_buses: int = 550,
     show_by_default: bool = True,
 ):
     """
@@ -92,7 +267,7 @@ def _add_bus_fleet_cluster(
         else:
             df = df.groupby("bus_id").last().reset_index()
 
-    # Limit to top N for smooth browser rendering
+    # Limit for smooth performance
     if len(df) > max_buses:
         df = df.tail(max_buses)
 
@@ -101,7 +276,11 @@ def _add_bus_fleet_cluster(
         overlay=True,
         control=True,
         show=show_by_default,
-        options={"maxClusterRadius": 40, "disableClusteringAtZoom": 15},
+        options={
+            "maxClusterRadius": 45,
+            "disableClusteringAtZoom": 15,
+            "spiderfyOnMaxZoom": True,
+        },
     )
 
     for _, row in df.iterrows():
@@ -116,48 +295,71 @@ def _add_bus_fleet_cluster(
         if speed >= 22.0:
             icon_color = "green"
             status_text = "🟢 Fast / Free Flow"
+            spd_color = "#16a34a"
         elif speed >= 10.0:
             icon_color = "orange"
             status_text = "🟡 Moderate Speed"
+            spd_color = "#d97706"
         else:
             icon_color = "red"
             status_text = "🔴 Slow / Heavy Delay"
+            spd_color = "#dc2626"
 
         popup_html = f"""
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:12px; min-width:160px; line-height:1.5;">
-            <div style="background:#1e293b; color:#fff; padding:4px 8px; border-radius:4px 4px 0 0; font-weight:bold;">
-                🚌 Bus #{bus_id}
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:12px; min-width:170px; line-height:1.5;">
+            <div style="background:#0f172a; color:#fff; padding:6px 10px; border-radius:6px 6px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">
+                <span>🚌 Bus #{bus_id}</span>
+                <span style="font-size:10px; background:#334155; padding:2px 6px; border-radius:4px;">R-{route_id}</span>
             </div>
-            <div style="padding:6px 8px; border:1px solid #e2e8f0; border-top:none; border-radius:0 0 4px 4px; background:#fff;">
-                <b>Route:</b> {route_id}<br/>
-                <b>Live Speed:</b> <span style="font-weight:bold; color:{'#16a34a' if speed>=22 else ('#d97706' if speed>=10 else '#dc2626')};">{speed:.1f} km/h</span><br/>
-                <b>Status:</b> {status_text}<br/>
-                {f'<small style="color:#64748b;">Ping: {ts[:19]}</small>' if ts else ''}
+            <div style="padding:8px 10px; border:1px solid #e2e8f0; border-top:none; border-radius:0 0 6px 6px; background:#fff;">
+                <b>Live Velocity:</b> <span style="font-weight:bold; font-size:13px; color:{spd_color};">{speed:.1f} km/h</span><br/>
+                <b>Traffic State:</b> {status_text}<br/>
+                {f'<small style="color:#64748b;">GPS Ping: {ts[:19]}</small>' if ts else ''}
             </div>
         </div>
         """
 
         folium.Marker(
             location=[lat, lon],
-            popup=folium.Popup(popup_html, max_width=220),
-            tooltip=f"Bus #{bus_id} | {speed:.0f} km/h",
+            popup=folium.Popup(popup_html, max_width=230),
+            tooltip=f"Bus #{bus_id} | {speed:.1f} km/h",
             icon=folium.Icon(color=icon_color, icon="bus", prefix="fa"),
         ).add_to(cluster)
 
     cluster.add_to(m)
 
 
-def _get_map_with_theme(tile_theme: str) -> tuple[folium.Map, str]:
+def _get_map_with_theme(
+    tile_theme: str = DEFAULT_THEME,
+    center: Optional[list] = None,
+    zoom: int = DEFAULT_ZOOM,
+) -> tuple[folium.Map, str]:
+    target_center = center if center else DELHI_CENTER
     conf = TILE_CONFIGS.get(tile_theme, TILE_CONFIGS[DEFAULT_THEME])
+
+    # Initialize Folium Map with tiles=None to eliminate raw-URL name leakage in LayerControl
     m = folium.Map(
-        location=DELHI_CENTER,
-        zoom_start=DEFAULT_ZOOM,
-        tiles=conf["tiles"],
-        attr=conf["attr"],
+        location=target_center,
+        zoom_start=zoom,
+        tiles=None,
         control_scale=True,
     )
-    _add_tile_layers(m, active_theme=tile_theme)
+
+    # Register each base map with its clean name and icon
+    for theme_name, tconf in TILE_CONFIGS.items():
+        is_active = (theme_name == tile_theme)
+        folium.TileLayer(
+            tiles=tconf["tiles"],
+            attr=tconf["attr"],
+            name=tconf["name"],
+            control=True,
+            show=is_active,
+        ).add_to(m)
+
     Fullscreen(position="topleft").add_to(m)
+    MiniMap(toggle_display=True, position="bottomleft", width=130, height=90).add_to(m)
+    _add_legend(m)
+    _inject_map_control_styles(m)
     return m, conf["tiles"]
 
 
@@ -178,11 +380,12 @@ def create_route_map(
     if route_geojson:
         folium.GeoJson(
             route_geojson,
-            name="Planned Route",
+            name="⚡ Optimized Route",
             style_function=lambda _: {
-                "color": "#FF6B35",
-                "weight": 5,
-                "opacity": 0.85,
+                "color": "#00f0ff" if "dark" in tiles or "Satellite" in tiles else "#ff007f",
+                "weight": 6,
+                "opacity": 0.9,
+                "dashArray": "8 4",
             },
         ).add_to(m)
 
@@ -190,7 +393,7 @@ def create_route_map(
     if start_coords:
         folium.Marker(
             location=start_coords,
-            popup="<b>Start Location</b>",
+            popup="<b>🟢 Start Origin</b>",
             icon=folium.Icon(color="green", icon="play", prefix="fa"),
         ).add_to(m)
 
@@ -198,7 +401,7 @@ def create_route_map(
     if end_coords:
         folium.Marker(
             location=end_coords,
-            popup="<b>Destination</b>",
+            popup="<b>🔴 Destination</b>",
             icon=folium.Icon(color="red", icon="flag-checkered", prefix="fa"),
         ).add_to(m)
 
@@ -218,7 +421,7 @@ def create_route_map(
             ).add_to(bus_stop_group)
         bus_stop_group.add_to(m)
 
-    folium.LayerControl(collapsed=False).add_to(m)
+    folium.LayerControl(collapsed=True, position="topright").add_to(m)
     return m
 
 
@@ -231,11 +434,11 @@ def create_heatmap(heatmap_data: list, tile_theme: str = DEFAULT_THEME) -> foliu
             [d["lat"], d["lon"], d.get("intensity", 0.5)]
             for d in heatmap_data
         ]
+        heat_group = folium.FeatureGroup(name="🔥 Congestion Heatmap", show=True)
         HeatMap(
             heat_points,
-            name="🔥 Congestion Heatmap",
-            radius=18,
-            blur=22,
+            radius=22,
+            blur=26,
             max_zoom=15,
             gradient={
                 0.2: "#2ecc71",
@@ -244,9 +447,10 @@ def create_heatmap(heatmap_data: list, tile_theme: str = DEFAULT_THEME) -> foliu
                 0.8: "#e74c3c",
                 1.0: "#c0392b",
             },
-        ).add_to(m)
+        ).add_to(heat_group)
+        heat_group.add_to(m)
 
-    folium.LayerControl(collapsed=False).add_to(m)
+    folium.LayerControl(collapsed=True, position="topright").add_to(m)
     return m
 
 
@@ -261,12 +465,19 @@ def create_combined_map(
     bus_telemetry=None,
     tile_theme: str = DEFAULT_THEME,
     show_bus_fleet: bool = True,
+    show_segments: bool = True,
+    show_heatmap: bool = True,
+    show_stops: bool = False,
+    show_walkshed: bool = False,
+    collapsed_layers: bool = True,
+    center: Optional[list] = None,
+    zoom: int = DEFAULT_ZOOM,
 ) -> folium.Map:
     """
     Combined map with route + heatmap + segment coloring by congestion level
-    + live bus fleet clustering + switchable basemaps.
+    + live bus fleet clustering + switchable basemaps + walkshed circles.
     """
-    m, tiles = _get_map_with_theme(tile_theme)
+    m, tiles = _get_map_with_theme(tile_theme, center=center, zoom=zoom)
 
     # --- Heatmap layer ---
     if heatmap_data:
@@ -274,11 +485,11 @@ def create_combined_map(
             [d["lat"], d["lon"], d.get("intensity", 0.5)]
             for d in heatmap_data
         ]
+        heat_group = folium.FeatureGroup(name="🔥 Congestion Heatmap", show=show_heatmap)
         HeatMap(
             heat_points,
-            name="🔥 Congestion Heatmap",
-            radius=18,
-            blur=22,
+            radius=22,
+            blur=26,
             max_zoom=15,
             gradient={
                 0.2: "#2ecc71",
@@ -287,38 +498,56 @@ def create_combined_map(
                 0.8: "#e74c3c",
                 1.0: "#c0392b",
             },
-        ).add_to(m)
+        ).add_to(heat_group)
+        heat_group.add_to(m)
 
-    # --- Segment lines colored by congestion ---
+    # --- Segment lines colored by congestion with interactive detail popup ---
     if segments:
-        segment_group = folium.FeatureGroup(name="🛣️ Road Segments (Congestion)")
+        segment_group = folium.FeatureGroup(name="🛣️ Road Segments (Congestion)", show=show_segments)
         for seg in segments:
             level = "free_flow"
-            speed_str = "N/A"
+            speed_val = 30.0
             if traffic_model:
                 try:
                     level = traffic_model.get_congestion_level(seg.segment_id)
                     speed_val = traffic_model.get_segment_speed(seg.segment_id)
-                    speed_str = f"{speed_val:.1f} km/h" if speed_val else "N/A"
                 except Exception:
                     pass
 
             color = _get_congestion_color(level)
+            ff_speed = FREE_FLOW_BENCHMARKS.get(seg.road_type, 35.0)
+            weight = 6 if level in ["heavy", "gridlock", "severe"] else 4
+
+            seg_popup = f"""
+            <div style="font-family:-apple-system, BlinkMacSystemFont, sans-serif; font-size:12px; min-width:180px; line-height:1.4;">
+                <div style="background:{color}; color:#fff; padding:5px 8px; border-radius:4px 4px 0 0; font-weight:bold;">
+                    🛣️ {seg.road_name}
+                </div>
+                <div style="padding:6px 8px; border:1px solid #cbd5e1; border-top:none; border-radius:0 0 4px 4px; background:#fff;">
+                    <b>Current Velocity:</b> <span style="font-weight:bold; color:{color};">{speed_val:.1f} km/h</span><br/>
+                    <b>Congestion State:</b> {level.replace('_', ' ').title()}<br/>
+                    <b>Road Category:</b> {seg.road_type.title()}<br/>
+                    <b>Length:</b> {seg.length_m:.0f}m (Free-flow: {ff_speed:.0f} km/h)
+                </div>
+            </div>
+            """
+
             folium.PolyLine(
                 locations=[
                     (seg.start_lat, seg.start_lon),
                     (seg.end_lat, seg.end_lon),
                 ],
                 color=color,
-                weight=5,
-                opacity=0.8,
-                tooltip=f"{seg.road_name}: {level.upper()} ({speed_str})",
+                weight=weight,
+                opacity=0.85,
+                popup=folium.Popup(seg_popup, max_width=240),
+                tooltip=f"{seg.road_name}: {level.upper()} ({speed_val:.1f} km/h)",
             ).add_to(segment_group)
         segment_group.add_to(m)
 
     # --- Live Bus Fleet (Clusters) ---
-    if show_bus_fleet and bus_telemetry is not None:
-        _add_bus_fleet_cluster(m, bus_telemetry, max_buses=350, show_by_default=True)
+    if bus_telemetry is not None:
+        _add_bus_fleet_cluster(m, bus_telemetry, max_buses=550, show_by_default=show_bus_fleet)
 
     # --- Route polyline ---
     if route_geojson:
@@ -326,10 +555,10 @@ def create_combined_map(
             route_geojson,
             name="⚡ Optimized Route",
             style_function=lambda _: {
-                "color": "#00f0ff" if "dark" in tiles else "#ff007f",
-                "weight": 6,
+                "color": "#00f0ff" if "dark" in tiles.lower() or "arcgis" in tiles.lower() else "#ff007f",
+                "weight": 7,
                 "opacity": 0.95,
-                "dashArray": "8 4",
+                "dashArray": "10 5",
             },
         ).add_to(m)
 
@@ -351,8 +580,8 @@ def create_combined_map(
 
     # --- Bus stop markers with enhanced popups ---
     if bus_stops:
-        bus_stop_group = folium.FeatureGroup(name="🚏 Bus Stops", show=False)
-        walkshed_group = folium.FeatureGroup(name="🚶 500m Walkshed Radius", show=False)
+        bus_stop_group = folium.FeatureGroup(name="🚏 Bus Stops", show=show_stops)
+        walkshed_group = folium.FeatureGroup(name="🚶 500m Walkshed Radius", show=show_walkshed)
 
         # Pre-compute route counts per stop
         try:
@@ -390,7 +619,7 @@ def create_combined_map(
 
             folium.CircleMarker(
                 location=(stop["lat"], stop["lon"]),
-                radius=7,
+                radius=6,
                 color="#0284c7",
                 fill=True,
                 fill_color="#38bdf8",
@@ -399,7 +628,7 @@ def create_combined_map(
                 tooltip=f"🚏 {stop['name']} ({routes_count} routes)",
             ).add_to(bus_stop_group)
 
-            # 500m walkshed circle (~0.0045 degrees)
+            # 500m walkshed circle
             folium.Circle(
                 location=(stop["lat"], stop["lon"]),
                 radius=500,
@@ -418,12 +647,11 @@ def create_combined_map(
     if start_coords and end_coords:
         try:
             m.fit_bounds([
-                [min(start_coords[0], end_coords[0]) - 0.01, min(start_coords[1], end_coords[1]) - 0.01],
-                [max(start_coords[0], end_coords[0]) + 0.01, max(start_coords[1], end_coords[1]) + 0.01],
+                [min(start_coords[0], end_coords[0]) - 0.015, min(start_coords[1], end_coords[1]) - 0.015],
+                [max(start_coords[0], end_coords[0]) + 0.015, max(start_coords[1], end_coords[1]) + 0.015],
             ])
         except Exception:
             pass
 
-    folium.LayerControl(collapsed=False).add_to(m)
+    folium.LayerControl(collapsed=collapsed_layers, position="topright").add_to(m)
     return m
-

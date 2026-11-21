@@ -9,6 +9,7 @@ Run with:  streamlit run app.py
 import sys
 import os
 import time
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # Ensure project root is on sys.path so all sub-packages are importable
@@ -34,7 +35,13 @@ st.set_page_config(
 # Project imports
 # ---------------------------------------------------------------------------
 from data.delhi_bus_stops import BUS_STOPS, BUS_ROUTES
-from pipeline.ingestion import load_telemetry, stream_telemetry, fetch_live_delhi_otd
+from pipeline.ingestion import (
+    load_telemetry,
+    stream_telemetry,
+    fetch_live_delhi_otd,
+    derive_delta_speeds,
+    DEFAULT_OTD_API_KEY,
+)
 from pipeline.preprocessing import clean_gps, filter_dwell_times, compute_segment_speeds
 from traffic.segments import create_delhi_road_network
 from traffic.model import TrafficModel
@@ -58,6 +65,12 @@ try:
     from streamlit_folium import st_folium
 except ImportError:
     st_folium = None
+
+# Optional: streamlit-autorefresh for smooth 15s live polling
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +130,6 @@ def build_traffic_model(df: pd.DataFrame, segments):
     """Run the preprocessing pipeline and build the traffic model."""
     df = clean_gps(df)
     df = filter_dwell_times(df, BUS_STOPS)
-    df = compute_segment_speeds(df)
     model = TrafficModel()
     model.update(df, segments)
     return model, df
@@ -127,6 +139,12 @@ def build_traffic_model(df: pd.DataFrame, segments):
 # Main application
 # ---------------------------------------------------------------------------
 def main():
+    # --- Auto-refresh hook (configurable non-blocking live poll) ---
+    auto_refresh_enabled = st.session_state.get("auto_refresh", True)
+    refresh_sec = st.session_state.get("refresh_interval", 25)
+    if auto_refresh_enabled and st_autorefresh is not None:
+        st_autorefresh(interval=refresh_sec * 1000, key="delhi_live_autorefresh_ticker")
+
     # --- Hero section ---
     render_hero()
 
@@ -140,37 +158,99 @@ def main():
     segments = get_road_segments()
 
     # --- Data Source Handling (Live vs Synthetic) ---
-    data_source = st.session_state.get("data_source", "🟡 Synthetic Simulation")
+    data_source = st.session_state.get("data_source", "🟢 Live Delhi OTD Feed")
     raw_df = None
     is_live_data = False
+    last_fetch_str = st.session_state.get("last_fetch_time_str", "Just now")
 
     if data_source == "🟢 Live Delhi OTD Feed":
-        api_key = st.session_state.get("otd_api_key", "").strip()
+        api_key = st.session_state.get("otd_api_key", DEFAULT_OTD_API_KEY).strip()
         fetch_requested = st.session_state.pop("fetch_live_requested", False)
+        now_ts = time.time()
+        last_ts = st.session_state.get("last_fetch_timestamp", 0)
 
-        if api_key:
-            if fetch_requested or "live_df" not in st.session_state:
-                with st.spinner("📡 Fetching real-time telemetry from Delhi Open Transit Data API (otd.delhi.gov.in) …"):
-                    try:
-                        live_df = fetch_live_delhi_otd(api_key=api_key)
-                        if len(live_df) > 0:
-                            st.session_state["live_df"] = live_df
-                            st.session_state["refresh_requested"] = True
-                            st.success(f"🟢 Successfully connected to Delhi OTD API! Ingested {len(live_df):,} live vehicle positions.")
-                        else:
-                            st.warning("Connected to Delhi OTD API, but feed returned 0 active vehicle positions right now.")
-                    except Exception as exc:
+        # Has cached live data?
+        has_cached_live = "live_df" in st.session_state
+
+        # Auto-refresh cooldown: matched to chosen refresh interval
+        time_elapsed = (now_ts - last_ts) >= max(10.0, float(refresh_sec) - 2.0)
+        # Only fetch when:
+        # 1. User clicked "Force Live Telemetry Refresh"
+        # 2. First boot and no cached data
+        # 3. Auto-refresh is on AND at least 15s have passed since last attempt
+        needs_fetch = fetch_requested or (not has_cached_live) or (auto_refresh_enabled and time_elapsed)
+
+        if api_key and needs_fetch:
+            # Stamp timestamp immediately so clicks on map/tabs don't trigger simultaneous/rapid requests
+            st.session_state["last_fetch_timestamp"] = now_ts
+            with st.spinner("📡 Streaming real-time telemetry from Delhi Open Transit Data API (otd.delhi.gov.in) …"):
+                try:
+                    new_raw_df = fetch_live_delhi_otd(api_key=api_key)
+                    if len(new_raw_df) > 0:
+                        prev_raw_df = st.session_state.get("prev_otd_raw_df", None)
+                        # Compute real-time delta speeds from actual GPS displacement
+                        live_df_with_speeds = derive_delta_speeds(new_raw_df, prev_raw_df)
+
+                        st.session_state["prev_otd_raw_df"] = new_raw_df.copy()
+                        st.session_state["live_df"] = live_df_with_speeds
+                        st.session_state["last_fetch_time_str"] = datetime.now().strftime("%I:%M:%S %p")
+                        st.session_state["refresh_requested"] = True
+                        last_fetch_str = st.session_state["last_fetch_time_str"]
+                    else:
+                        st.warning("Connected to Delhi OTD API, but feed returned 0 active vehicle positions right now.")
+                except Exception as exc:
+                    # Cooldown on network / socket error: back off by 25s to avoid spamming the port
+                    st.session_state["last_fetch_timestamp"] = now_ts + 25.0
+                    if has_cached_live:
+                        # Retain existing live fleet without interruption or alarming error banner!
+                        st.caption(
+                            f"ℹ️ Delhi OTD live sync throttled: {exc}. Retaining current live snapshot ({len(st.session_state['live_df']):,} buses)."
+                        )
+                    else:
                         st.error(f"❌ Failed to query Delhi OTD API: {exc}")
-                        st.info("Falling back to synthetic telemetry simulation baseline.")
+                        st.info("Falling back to synthetic simulation baseline.")
 
-            if "live_df" in st.session_state:
-                raw_df = st.session_state["live_df"]
-                is_live_data = True
-        else:
-            st.info("💡 **Live Mode Selected:** Please enter your Delhi Open Transit Data API key in the sidebar and click **'Fetch Live Delhi Buses'**. Currently showing synthetic baseline.")
+        if "live_df" in st.session_state:
+            raw_df = st.session_state["live_df"]
+            is_live_data = True
+            last_fetch_str = st.session_state.get("last_fetch_time_str", datetime.now().strftime("%I:%M:%S %p"))
 
     if raw_df is None:
         raw_df = get_telemetry(TELEMETRY_PATH)
+
+    # --- Live Stream Status Banner ---
+    if is_live_data:
+        st.markdown(
+            f"""
+            <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 10px 18px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; background-color: #10b981; border-radius: 50%; box-shadow: 0 0 10px #10b981;"></span>
+                    <span style="color: #34d399; font-weight: 700; font-size: 0.95rem;">LIVE OTD STREAMING</span>
+                    <span style="color: #94a3b8; font-size: 0.88rem;">• Ingested <b>{len(raw_df):,}</b> active Delhi buses • Speeds calculated via live GPS displacement</span>
+                </div>
+                <div style="color: #38bdf8; font-size: 0.85rem; font-weight: 600;">
+                    ⏱️ Last sync: {last_fetch_str} {'(Next in ~' + str(refresh_sec) + 's)' if auto_refresh_enabled else ''}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """
+            <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 12px; padding: 10px 18px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; background-color: #f59e0b; border-radius: 50%;"></span>
+                    <span style="color: #fbbf24; font-weight: 700; font-size: 0.95rem;">SYNTHETIC SIMULATION BASELINE</span>
+                    <span style="color: #94a3b8; font-size: 0.88rem;">• Modeling 100 buses across Delhi's primary transit corridors</span>
+                </div>
+                <div style="color: #94a3b8; font-size: 0.85rem;">
+                    💡 Switch to <b>🟢 Live Delhi OTD Feed</b> in the sidebar to stream real-time DTC/DIMTS fleet
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Rebuild model when data changes or on refresh
     if "traffic_model" not in st.session_state or st.session_state.get("refresh_requested"):
@@ -217,13 +297,17 @@ def main():
 
     # Choose tabs based on pydeck availability
     if pydeck_available():
-        map_tab_2d, map_tab_3d, map_tab_arcs = st.tabs([
+        map_tab_2d, map_tab_3d, map_tab_arcs, fleet_tab_main = st.tabs([
             "🗺️ 2D Live Map",
             "🏙️ 3D Congestion View",
             "🌐 Bus Route Arcs",
+            "🚌 Active Bus Fleet Explorer",
         ])
     else:
-        map_tab_2d = st.container()
+        map_tab_2d, fleet_tab_main = st.tabs([
+            "🗺️ 2D Live Map",
+            "🚌 Active Bus Fleet Explorer",
+        ])
         map_tab_3d = None
         map_tab_arcs = None
 
@@ -255,7 +339,26 @@ def main():
                     if st.button("🗑️ Reset Click Points", use_container_width=True):
                         st.session_state.pop("click_start", None)
                         st.session_state.pop("click_end", None)
+                        st.session_state.pop("_last_handled_click", None)
                         st.rerun()
+
+        # Corridor focal coordinates and zoom levels
+        corridor = st.session_state.get("corridor_focus", "All Delhi (Metropolitan Overview)")
+        corridor_coords = {
+            "All Delhi (Metropolitan Overview)": ([28.6139, 77.2090], 12),
+            "Central Delhi (Connaught Place / India Gate)": ([28.6200, 77.2180], 13),
+            "North Delhi (ISBT Kashmere Gate / Red Fort)": ([28.6672, 77.2284], 14),
+            "South Delhi (AIIMS / Ring Road / Saket)": ([28.5672, 77.2100], 13),
+            "East Delhi (Vikas Marg / Anand Vihar)": ([28.6364, 77.2956], 13),
+            "West Delhi (Dwarka / Janakpuri / IGI)": ([28.5950, 77.0700], 13),
+        }
+        map_center, map_zoom = corridor_coords.get(corridor, ([28.6139, 77.2090], 12))
+
+        show_walkshed = st.session_state.get("show_walkshed", False)
+        show_segments = st.session_state.get("show_segments", True)
+        show_heatmap = st.session_state.get("show_heatmap", True)
+        show_stops = st.session_state.get("show_stops", False)
+        keep_layers_open = st.session_state.get("keep_layers_open", False)
 
         combined_map = create_combined_map(
             route_geojson=route_geojson,
@@ -268,6 +371,13 @@ def main():
             bus_telemetry=processed_df,
             tile_theme=map_theme,
             show_bus_fleet=show_bus_fleet,
+            show_segments=show_segments,
+            show_heatmap=show_heatmap,
+            show_stops=show_stops,
+            show_walkshed=show_walkshed,
+            collapsed_layers=(not keep_layers_open),
+            center=map_center,
+            zoom=map_zoom,
         )
 
         if st_folium is not None:
@@ -278,20 +388,24 @@ def main():
                 returned_objects=["last_clicked"],
             )
 
-            # Handle click-to-route
+            # Handle click-to-route without redundant reruns
             if map_result and map_result.get("last_clicked"):
                 clicked_lat = map_result["last_clicked"]["lat"]
                 clicked_lon = map_result["last_clicked"]["lng"]
-                if "click_start" not in st.session_state or (
-                    "click_start" in st.session_state and "click_end" in st.session_state
-                ):
-                    # First click or reset
-                    st.session_state["click_start"] = (clicked_lat, clicked_lon)
-                    st.session_state.pop("click_end", None)
-                    st.rerun()
-                elif "click_start" in st.session_state and "click_end" not in st.session_state:
-                    st.session_state["click_end"] = (clicked_lat, clicked_lon)
-                    st.rerun()
+                click_tuple = (round(clicked_lat, 5), round(clicked_lon, 5))
+                last_handled = st.session_state.get("_last_handled_click")
+                if click_tuple != last_handled:
+                    st.session_state["_last_handled_click"] = click_tuple
+                    if "click_start" not in st.session_state or (
+                        "click_start" in st.session_state and "click_end" in st.session_state
+                    ):
+                        # First click or reset
+                        st.session_state["click_start"] = (clicked_lat, clicked_lon)
+                        st.session_state.pop("click_end", None)
+                        st.rerun()
+                    elif "click_start" in st.session_state and "click_end" not in st.session_state:
+                        st.session_state["click_end"] = (clicked_lat, clicked_lon)
+                        st.rerun()
         else:
             # Fallback: render map as inline HTML
             from streamlit.components.v1 import html as st_html
@@ -308,7 +422,11 @@ def main():
             deck_3d = create_3d_congestion_view(
                 heatmap_data=heatmap_data,
                 bus_telemetry=processed_df,
+                segments=segments,
+                traffic_model=traffic_model,
+                route_geojson=route_geojson,
                 dark_mode=is_dark,
+                center=map_center,
             )
             if deck_3d is not None:
                 st.pydeck_chart(deck_3d, use_container_width=True, height=580)
@@ -325,6 +443,10 @@ def main():
                 st.pydeck_chart(deck_arcs, use_container_width=True, height=580)
             else:
                 st.warning("Install `pydeck` to enable arc visualization.")
+
+    # --- Active Bus Fleet Explorer (Main Tab) ---
+    with fleet_tab_main:
+        render_bus_tracker(processed_df, key_prefix="top_fleet")
 
     st.markdown("---")
 
@@ -345,26 +467,17 @@ def main():
         render_traffic_table(traffic_model, segments)
 
     with table_tab2:
-        render_bus_tracker(processed_df)
+        render_bus_tracker(processed_df, key_prefix="sub_fleet")
 
     with table_tab3:
         _render_predictions(processed_df, segments)
 
-    # --- Auto-refresh loop ---
-    if st.session_state.get("auto_refresh"):
-        placeholder = st.empty()
-        with placeholder.container():
-            st.caption("⏳ Auto-refreshing in 30 seconds …")
-        time.sleep(30)
-        st.rerun()
-
 
 def _render_predictions(processed_df: pd.DataFrame, segments):
-    """Render ML traffic speed predictions 30 and 60 minutes ahead."""
-    st.markdown("### 🔮 Predictive Traffic Forecast")
+    """Render ML traffic speed predictions 30 and 60 minutes ahead with trend indicators."""
+    st.markdown("### 🔮 Machine Learning Traffic Forecasting")
     st.caption(
-        "Uses a Gradient Boosting model trained on current session telemetry "
-        "to forecast road segment speeds 30 and 60 minutes ahead."
+        "Gradient Boosting Regressor forecasting segment velocity 30 & 60 minutes into the future based on temporal cyclicality and bus velocity trends."
     )
 
     # Build predictor
@@ -374,13 +487,13 @@ def _render_predictions(processed_df: pd.DataFrame, segments):
         if processed_df is not None and not processed_df.empty:
             from traffic.segments import snap_to_segment
             train_rows = []
-            for _, row in processed_df.head(2000).iterrows():
+            for _, row in processed_df.head(300).iterrows():
                 if pd.notna(row.get("lat")) and pd.notna(row.get("lon")) and pd.notna(row.get("speed")):
                     seg = snap_to_segment(float(row["lat"]), float(row["lon"]), segments)
                     train_rows.append({
                         "segment_id": seg.segment_id,
                         "speed": float(row["speed"]),
-                        "timestamp": row.get("timestamp", "2026-11-20 09:00:00"),
+                        "timestamp": row.get("timestamp", "2026-11-21 09:00:00"),
                     })
             if train_rows:
                 predictor.train(pd.DataFrame(train_rows))
@@ -388,27 +501,74 @@ def _render_predictions(processed_df: pd.DataFrame, segments):
         st.session_state["predictor"] = predictor
 
     predictor = st.session_state["predictor"]
+    current_model = st.session_state.get("traffic_model", TrafficModel())
 
-    # Show predictions for key segments
+    # Build forecast rows
     pred_rows = []
-    sample_segments = segments[:20]  # First 20 segments
-    for seg in sample_segments:
+    bottlenecks_30m = []
+
+    for seg in segments[:30]:  # Top 30 Delhi segments
+        cur_spd = current_model.get_segment_speed(seg.segment_id)
         try:
             speed_30 = predictor.predict(seg.segment_id, future_minutes=30)
             speed_60 = predictor.predict(seg.segment_id, future_minutes=60)
         except Exception:
-            speed_30 = speed_60 = None
+            speed_30 = speed_60 = cur_spd
+
+        diff_30 = speed_30 - cur_spd
+        if diff_30 >= 1.5:
+            trend_icon = "🟢 Speeding Up ↗"
+        elif diff_30 <= -1.5:
+            trend_icon = "🔴 Slowing Down ↘"
+            if speed_30 < 15.0:
+                bottlenecks_30m.append(f"{seg.road_name} ({speed_30:.1f} km/h)")
+        else:
+            trend_icon = "⚪ Steady ➔"
 
         pred_rows.append({
-            "Road": seg.road_name,
+            "Road Corridor": seg.road_name,
             "Type": seg.road_type.title(),
-            "Current Speed (km/h)": f"{st.session_state.get('traffic_model', TrafficModel()).get_segment_speed(seg.segment_id):.1f}",
-            "⏱️ +30 min Forecast": f"{speed_30:.1f} km/h" if speed_30 else "—",
-            "⏱️ +60 min Forecast": f"{speed_60:.1f} km/h" if speed_60 else "—",
+            "Current (km/h)": round(cur_spd, 1),
+            "⏱️ +30 min (km/h)": round(speed_30, 1),
+            "⏱️ +60 min (km/h)": round(speed_60, 1),
+            "Expected Trend": trend_icon,
         })
 
+    # Alert Banner if anticipated bottlenecks
+    if bottlenecks_30m:
+        st.warning(
+            f"⚠️ **Anticipated Slowdowns (+30m):** {', '.join(bottlenecks_30m[:3])}"
+            + (f" and {len(bottlenecks_30m)-3} more" if len(bottlenecks_30m) > 3 else "")
+            + " — Dynamic journey planner will proactively route buses around these corridors."
+        )
+
     if pred_rows:
-        st.dataframe(pd.DataFrame(pred_rows), use_container_width=True, hide_index=True)
+        pred_df = pd.DataFrame(pred_rows)
+        st.dataframe(
+            pred_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Current (km/h)": st.column_config.ProgressColumn(
+                    "Current Speed",
+                    format="%.1f km/h",
+                    min_value=0,
+                    max_value=60,
+                ),
+                "⏱️ +30 min (km/h)": st.column_config.ProgressColumn(
+                    "+30m Forecast",
+                    format="%.1f km/h",
+                    min_value=0,
+                    max_value=60,
+                ),
+                "⏱️ +60 min (km/h)": st.column_config.ProgressColumn(
+                    "+60m Forecast",
+                    format="%.1f km/h",
+                    min_value=0,
+                    max_value=60,
+                ),
+            },
+        )
     else:
         st.info("Not enough data to generate predictions yet.")
 

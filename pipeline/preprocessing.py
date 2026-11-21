@@ -108,19 +108,28 @@ def clean_gps(df: pd.DataFrame) -> pd.DataFrame:
     df = df[keep_mask].copy()
     df.reset_index(drop=True, inplace=True)
 
-    # 3. Interpolate small gaps (≤ 60 s) per bus
+    # 3. Interpolate small gaps (≤ 60 s) per bus ONLY when there are multiple pings
     interpolated_parts: list[pd.DataFrame] = []
     for _bus_id, grp in df.groupby("bus_id"):
-        grp = grp.copy()
-        grp.set_index("timestamp", inplace=True)
-        grp = grp.resample("10s").asfreq()
-        # Only interpolate lat/lon; forward-fill categorical columns
-        grp[["lat", "lon"]] = grp[["lat", "lon"]].interpolate(method="time", limit=6)
-        grp[["bus_id", "route_id"]] = grp[["bus_id", "route_id"]].ffill()
-        grp[["speed", "heading"]] = grp[["speed", "heading"]].interpolate(method="linear", limit=6)
-        grp.dropna(subset=["lat", "lon", "bus_id"], inplace=True)
-        grp.reset_index(inplace=True)
-        interpolated_parts.append(grp)
+        if len(grp) < 2:
+            interpolated_parts.append(grp)
+            continue
+        try:
+            grp = grp.copy()
+            grp.set_index("timestamp", inplace=True)
+            grp = grp.resample("10s").asfreq()
+            grp[["lat", "lon"]] = grp[["lat", "lon"]].interpolate(method="time", limit=6)
+            for col in ["bus_id", "route_id"]:
+                if col in grp.columns:
+                    grp[col] = grp[col].ffill().bfill()
+            for col in ["speed", "heading"]:
+                if col in grp.columns:
+                    grp[col] = grp[col].interpolate(method="linear", limit=6)
+            grp.dropna(subset=["lat", "lon", "bus_id"], inplace=True)
+            grp.reset_index(inplace=True)
+            interpolated_parts.append(grp)
+        except Exception:
+            interpolated_parts.append(grp.reset_index() if "timestamp" not in grp.columns else grp)
 
     if interpolated_parts:
         df = pd.concat(interpolated_parts, ignore_index=True)

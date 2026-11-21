@@ -125,6 +125,30 @@ delhi-bus-planner/
 
 ---
 
+## 🚀 Deploying to Render
+
+This application is pre-configured for 1-click deployment on [Render](https://render.com/):
+
+### Option A: Using the Render Blueprint (`render.yaml`)
+1. Push your repository to GitHub.
+2. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** → **Blueprint**.
+3. Connect your repository (`delhiconnecthackathon`).
+4. Render will automatically read `render.yaml` and configure the build command, start command, and port.
+5. Click **Apply**. Your app will be live with a public HTTPS URL!
+
+### Option B: Manual Web Service Setup on Render
+1. Go to [Render Dashboard](https://dashboard.render.com/) → **New +** → **Web Service**.
+2. Connect your GitHub repository.
+3. Configure the following settings:
+   - **Environment:** `Python 3`
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true`
+4. Under **Environment Variables**, add:
+   - `PYTHON_VERSION`: `3.11.8`
+5. Click **Create Web Service**.
+
+---
+
 ## 📄 License
 
 Built for the Delhi Transport Stack Hackathon 2026.
