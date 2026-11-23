@@ -391,11 +391,14 @@ def render_sidebar(bus_stops: Optional[list] = None) -> Tuple[Optional[tuple], O
         st.markdown("---")
         st.markdown("## 🗺️ Map Settings & GIS Controls")
 
+        options = ["OpenStreetMap", "Esri Street Map", "Satellite Aerial (Esri)", "Clean Light"]
+        curr_theme = st.session_state.get("map_theme", "OpenStreetMap")
+        idx = options.index(curr_theme) if curr_theme in options else 0
         map_theme = st.selectbox(
             "🎨 Basemap Styling",
-            ["Dark Matter (Command Center)", "Satellite Aerial (Esri)", "Clean Light", "OpenStreetMap"],
-            index=0,
-            help="Switch between dark command-center, high-res satellite imagery, clean light, or standard street map",
+            options,
+            index=idx,
+            help="Switch between standard OpenStreetMap, high-res Esri street map, satellite imagery, or clean light basemap",
         )
         st.session_state["map_theme"] = map_theme
 

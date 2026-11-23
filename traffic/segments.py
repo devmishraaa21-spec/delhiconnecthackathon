@@ -249,6 +249,22 @@ def create_delhi_road_network() -> List[RoadSegment]:
             (28.5742, 77.2340),  # JLN Stadium / Jangpura
             (28.5894, 77.2567),  # Sarai Kale Khan
         ]),
+
+        # 11. Rohini & Outer North Corridors
+        ("Bhagwan Mahavir Marg (Rohini)", "arterial", [
+            (28.7025, 77.1360),  # Pitampura
+            (28.7152, 77.1181),  # Rohini Sec-3
+            (28.7207, 77.1070),  # Rithala
+            (28.6714, 77.1047),  # Paschim Vihar
+        ]),
+
+        # 12. South-West Arterial (RK Puram / Munirka)
+        ("Africa Avenue - RK Puram", "arterial", [
+            (28.5839, 77.1737),  # Moti Bagh
+            (28.5676, 77.1766),  # RK Puram
+            (28.5565, 77.1734),  # Munirka
+            (28.5285, 77.1573),  # Vasant Kunj
+        ]),
     ]
 
     segments: list[RoadSegment] = []

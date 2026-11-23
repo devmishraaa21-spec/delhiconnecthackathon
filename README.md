@@ -57,17 +57,44 @@ An end-to-end intelligent traffic modeling engine and dynamic journey planner bu
 
 ## 🚀 Quickstart
 
-### 1. Prerequisites
+### Option 1: Unified Full-Stack Mode (Recommended • Single Command • Port 8000)
+Runs the FastAPI high-performance backend and the React 18 frontend together in a single command on **one single port**:
+
 ```bash
 pip install -r requirements.txt
+python server.py
 ```
+*(Or double-click `run.bat` on Windows / run `./run.sh` on Linux/macOS)*
 
-### 2. Run the Application
+- 🌐 **Web Dashboard:** `http://localhost:8000`
+- 📖 **Interactive API Docs (Swagger):** `http://localhost:8000/docs`
+- ⚡ **Zero Setup & Zero Build Steps:** Runs out of the box with `static/index.html`. No separate Node/npm server or port proxying required.
+- 🎯 **No CORS / Ephemeral Port Issues:** The React UI and FastAPI API share the exact same host and port.
+
+---
+
+### Option 2: Vite Dev Server Mode (For React Component Developers)
+If you want live Hot Module Replacement (HMR) while editing JSX files:
+
 ```bash
+# Terminal 1: Start FastAPI
+python server.py
+
+# Terminal 2: Start Vite Dev Server
+cd frontend-react
+npm install
+npm run dev
+```
+Open `http://localhost:5173`.
+
+---
+
+### Option 3: Legacy Streamlit Dashboard
+```bash
+pip install -r requirements.txt
 streamlit run app.py
 ```
-
-Open your browser to `http://localhost:8501`.
+Open `http://localhost:8501`.
 
 ### 3. Connecting to Official Live Delhi OTD Data
 1. Visit the [Delhi Open Transit Data Portal (otd.delhi.gov.in)](https://otd.delhi.gov.in/) and request a free API key under **Real Time Data**.

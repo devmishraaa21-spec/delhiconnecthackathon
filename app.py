@@ -292,20 +292,20 @@ def main():
 
     # --- Map Tabs: 2D Folium | 3D Pydeck ---
     heatmap_data = traffic_model.get_heatmap_data()
-    map_theme = st.session_state.get("map_theme", "Dark Matter (Command Center)")
+    map_theme = st.session_state.get("map_theme", "OpenStreetMap")
     show_bus_fleet = st.session_state.get("show_bus_fleet", True)
 
     # Choose tabs based on pydeck availability
     if pydeck_available():
         map_tab_2d, map_tab_3d, map_tab_arcs, fleet_tab_main = st.tabs([
-            "🗺️ 2D Live Map",
+            "🗺️ Map",
             "🏙️ 3D Congestion View",
             "🌐 Bus Route Arcs",
             "🚌 Active Bus Fleet Explorer",
         ])
     else:
         map_tab_2d, fleet_tab_main = st.tabs([
-            "🗺️ 2D Live Map",
+            "🗺️ Map",
             "🚌 Active Bus Fleet Explorer",
         ])
         map_tab_3d = None

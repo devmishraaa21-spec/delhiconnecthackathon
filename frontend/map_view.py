@@ -34,10 +34,15 @@ FREE_FLOW_BENCHMARKS = {
 
 # Supported tile definitions
 TILE_CONFIGS = {
-    "Dark Matter (Command Center)": {
-        "tiles": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        "attr": "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors &copy; <a href='https://carto.com/attributions'>CARTO</a>",
-        "name": "🌙 Dark Mode (Command Center)",
+    "OpenStreetMap": {
+        "tiles": "OpenStreetMap",
+        "attr": "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+        "name": "🗺️ OpenStreetMap Standard",
+    },
+    "Esri Street Map": {
+        "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        "attr": "Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom",
+        "name": "🏛️ Esri Street Map",
     },
     "Satellite Aerial (Esri)": {
         "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -45,17 +50,12 @@ TILE_CONFIGS = {
         "name": "🛰️ Satellite Aerial (Esri)",
     },
     "Clean Light": {
-        "tiles": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        "tiles": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
         "attr": "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors &copy; <a href='https://carto.com/attributions'>CARTO</a>",
         "name": "☀️ Clean Light",
     },
-    "OpenStreetMap": {
-        "tiles": "OpenStreetMap",
-        "attr": "&copy; OpenStreetMap contributors",
-        "name": "🗺️ OpenStreetMap Standard",
-    },
 }
-DEFAULT_THEME = "Dark Matter (Command Center)"
+DEFAULT_THEME = "OpenStreetMap"
 
 
 def _get_congestion_color(level: str) -> str:
@@ -335,6 +335,9 @@ def _get_map_with_theme(
     zoom: int = DEFAULT_ZOOM,
 ) -> tuple[folium.Map, str]:
     target_center = center if center else DELHI_CENTER
+    # Guard against stale session state referencing removed themes
+    if tile_theme not in TILE_CONFIGS:
+        tile_theme = DEFAULT_THEME
     conf = TILE_CONFIGS.get(tile_theme, TILE_CONFIGS[DEFAULT_THEME])
 
     # Initialize Folium Map with tiles=None to eliminate raw-URL name leakage in LayerControl

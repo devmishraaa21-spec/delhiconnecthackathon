@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delhi Transit Intelligence & Dynamic Journey Planner</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚌</text></svg>" />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Leaflet GIS CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- React 18, ReactDOM & Babel for Single-File Merged Architecture -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --bg-card: rgba(15, 23, 42, 0.78);
+      --border-subtle: rgba(255, 107, 53, 0.25);
+      --border-accent: rgba(255, 107, 53, 0.6);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary-orange: #ff6b35;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .top-tricolor-bar {
+      height: 4px;
+      background: linear-gradient(90deg, #FF9933 0%, #FFFFFF 50%, #138808 100%);
+      box-shadow: 0 0 14px rgba(255, 153, 51, 0.7);
+      width: 100%;
+    }
+
+    .glass-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .glass-panel-glow {
+      border-color: var(--border-accent);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 107, 53, 0.15);
+    }
+
+    /* Leaflet Overrides */
+    .leaflet-container {
+      font-family: inherit;
+      background: #0b0f19 !important;
+    }
+
+    .leaflet-popup-content-wrapper {
+      background: rgba(15, 23, 42, 0.95) !important;
+      color: #f1f5f9 !important;
+      border: 1px solid rgba(255, 107, 53, 0.4) !important;
+      border-radius: 10px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+      backdrop-filter: blur(12px) !important;
+    }
+    .leaflet-popup-tip {
+      background: rgba(15, 23, 42, 0.95) !important;
+      border: 1px solid rgba(255, 107, 53, 0.4) !important;
+    }
+
+    .leaflet-control-layers {
+      background: rgba(15, 23, 42, 0.94) !important;
+      border: 1px solid rgba(255, 107, 53, 0.45) !important;
+      border-radius: 12px !important;
+      color: #f1f5f9 !important;
+      backdrop-filter: blur(14px) !important;
+      -webkit-backdrop-filter: blur(14px) !important;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.65), 0 0 16px rgba(255, 107, 53, 0.15) !important;
+      padding: 10px 14px !important;
+    }
+    .leaflet-control-layers, .leaflet-control-layers * {
+      color: #f1f5f9 !important;
+    }
+    .leaflet-control-layers-toggle {
+      background-color: rgba(15, 23, 42, 0.92) !important;
+      border: 1px solid rgba(255, 107, 53, 0.5) !important;
+      border-radius: 10px !important;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
+    }
+    .leaflet-control-layers-toggle:hover {
+      transform: scale(1.08) !important;
+      border-color: #ff9933 !important;
+      box-shadow: 0 0 16px rgba(255, 153, 51, 0.6) !important;
+    }
+    .leaflet-control-layers label {
+      color: #cbd5e1 !important;
+      font-size: 12px !important;
+      font-weight: 500 !important;
+      margin-bottom: 6px !important;
+      cursor: pointer !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+    .leaflet-control-layers label:hover {
+      color: #ff9933 !important;
+    }
+    .leaflet-control-layers input[type="radio"], .leaflet-control-layers input[type="checkbox"] {
+      accent-color: #ff6b35 !important;
+      cursor: pointer !important;
+      width: 15px !important;
+      height: 15px !important;
+    }
+    .leaflet-control-zoom {
+      border: 1px solid rgba(255, 107, 53, 0.35) !important;
+      border-radius: 10px !important;
+      overflow: hidden !important;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+    }
+    .leaflet-control-zoom a {
+      background: rgba(15, 23, 42, 0.92) !important;
+      color: #ff9933 !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      transition: background 0.2s ease, color 0.2s ease !important;
+    }
+    .leaflet-control-zoom a:hover {
+      background: rgba(255, 107, 53, 0.3) !important;
+      color: #ffffff !important;
+    }
+
+    @keyframes pulseGreen {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .pulse-dot-green {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background-color: #10b981;
+      display: inline-block;
+      animation: pulseGreen 2s infinite;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0f19; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #ff6b35; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    const CONGESTION_COLORS = {
+      free_flow: '#2ecc71',
+      moderate: '#f1c40f',
+      heavy: '#e67e22',
+      gridlock: '#e74c3c',
+      severe: '#e74c3c',
+    };
+
+    function App() {
+      const [status, setStatus] = useState({});
+      const [fleet, setFleet] = useState([]);
+      const [segments, setSegments] = useState([]);
+      const [stops, setStops] = useState([]);
+      const [predictions, setPredictions] = useState([]);
+      const [activeTab, setActiveTab] = useState('map');
+
+      // Journey Planning State
+      const [selectedSrc, setSelectedSrc] = useState('Connaught Place');
+      const [selectedDst, setSelectedDst] = useState('AIIMS');
+      const [route, setRoute] = useState(null);
+      const [clickPoints, setClickPoints] = useState({ start: null, end: null });
+
+      // Map Viewport and Layer Controls
+      const [corridorFocus, setCorridorFocus] = useState('all');
+      const [layerVisibility, setLayerVisibility] = useState({
+        segments: true,
+        fleet: true,
+        stops: true,
+        walkshed: false,
+      });
+
+      const [alerts, setAlerts] = useState({ bottlenecks: [], bunching: [], timestamp: '' });
+      const [branchOrigin, setBranchOrigin] = useState('Connaught Place');
+      const [branchDest, setBranchDest] = useState('AIIMS');
+      const [branchData, setBranchData] = useState(null);
+      const [branchLoading, setBranchLoading] = useState(false);
+
+      const fetchBranches = async (o = branchOrigin, d = branchDest) => {
+        setBranchLoading(true);
+        try {
+          const res = await fetch(`/api/corridor-branches?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}`);
+          if (res.ok) {
+            setBranchData(await res.json());
+          }
+        } catch (err) {
+          console.error('Failed to load corridor branches:', err);
+        } finally {
+          setBranchLoading(false);
+        }
+      };
+      const [selectedStopData, setSelectedStopData] = useState(null);
+      const [isListening, setIsListening] = useState(false);
+      const [voiceStatus, setVoiceStatus] = useState('');
+      const [showItinerary, setShowItinerary] = useState(true);
+      const [refreshing, setRefreshing] = useState(false);
+
+      const fetchBaseData = async () => {
+        try {
+          const [segRes, stopRes, predRes] = await Promise.all([
+            fetch('/api/segments'),
+            fetch('/api/stops'),
+            fetch('/api/predictions'),
+          ]);
+          if (segRes.ok) setSegments(await segRes.json());
+          if (stopRes.ok) setStops(await stopRes.json());
+          if (predRes.ok) setPredictions(await predRes.json());
+        } catch (err) {
+          console.error('Base data error:', err);
+        }
+      };
+
+      const fetchLiveTelemetry = async () => {
+        try {
+          const [statusRes, fleetRes, alertsRes] = await Promise.all([
+            fetch('/api/status'),
+            fetch('/api/fleet?limit=550'),
+            fetch('/api/alerts'),
+          ]);
+          if (statusRes.ok) setStatus(await statusRes.json());
+          if (fleetRes.ok) setFleet(await fleetRes.json());
+          if (alertsRes.ok) setAlerts(await alertsRes.json());
+        } catch (err) {
+          console.error('Telemetry poll error:', err);
+        }
+      };
+
+      const fetchStopArrivals = async (stopId) => {
+        try {
+          const res = await fetch(`/api/stop-arrivals/${stopId}`);
+          if (res.ok) setSelectedStopData(await res.json());
+        } catch (err) {
+          console.error('Stop arrivals error:', err);
+        }
+      };
+
+      const handleVoiceSearch = () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          alert('Web Speech API is not supported in this browser. Please try in Google Chrome or Microsoft Edge.');
+          return;
+        }
+        const rec = new SpeechRecognition();
+        rec.lang = 'en-IN';
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+
+        setIsListening(true);
+        setVoiceStatus('🎙️ Listening... Speak e.g. "Rohini to AIIMS" or "CP to Janakpuri"');
+
+        rec.onresult = (e) => {
+          const transcript = e.results[0][0].transcript.toLowerCase();
+          setIsListening(false);
+          setVoiceStatus(`🗣️ Heard: "${transcript}"`);
+
+          let src = '';
+          let dst = '';
+          if (transcript.includes(' to ')) {
+            const parts = transcript.split(' to ');
+            src = parts[0].replace('from', '').trim();
+            dst = parts[1].trim();
+          } else if (transcript.includes(' se ')) {
+            const parts = transcript.split(' se ');
+            src = parts[0].trim();
+            dst = parts[1].trim();
+          }
+
+          if (src && dst && stops.length > 0) {
+            const sObj = stops.find(s => s.name.toLowerCase().includes(src) || src.includes(s.name.toLowerCase()));
+            const dObj = stops.find(s => s.name.toLowerCase().includes(dst) || dst.includes(s.name.toLowerCase()));
+            if (sObj && dObj) {
+              setSelectedSrc(sObj.name);
+              setSelectedDst(dObj.name);
+              handlePlanRoute(sObj.lat, sObj.lon, dObj.lat, dObj.lon);
+              setVoiceStatus(`✅ Planned route: ${sObj.name} ➔ ${dObj.name}`);
+            } else {
+              setVoiceStatus(`⚠️ Could not recognize stops in "${transcript}". Please try again.`);
+            }
+          } else {
+            setVoiceStatus(`⚠️ Please say e.g. "From [Stop A] to [Stop B]"`);
+          }
+        };
+
+        rec.onerror = (e) => {
+          setIsListening(false);
+          setVoiceStatus(`⚠️ Voice error: ${e.error}`);
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+        };
+
+        rec.start();
+      };
+
+      useEffect(() => {
+        fetchBaseData();
+        fetchLiveTelemetry();
+        const timer = setInterval(() => {
+          fetchLiveTelemetry();
+          fetchBranches(branchOrigin, branchDest);
+        }, 18000);
+        fetchBranches(branchOrigin, branchDest);
+        return () => clearInterval(timer);
+        window.__viewStopArrivals = (stopId) => {
+          fetchStopArrivals(stopId);
+        };
+      }, []);
+
+      const handlePlanRoute = async (sLat, sLon, eLat, eLon) => {
+        setClickPoints({ start: [sLat, sLon], end: [eLat, eLon] });
+        try {
+          const res = await fetch('/api/route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start_lat: sLat, start_lon: sLon, end_lat: eLat, end_lon: eLon }),
+          });
+          if (res.ok) {
+            setRoute(await res.json());
+          }
+        } catch (err) {
+          console.error('Routing failed:', err);
+        }
+      };
+
+      const handleManualSync = async () => {
+        setRefreshing(true);
+        try {
+          await fetch('/api/refresh', { method: 'POST' });
+          await fetchLiveTelemetry();
+        } catch (err) {}
+        setTimeout(() => setRefreshing(false), 1200);
+      };
+
+      const handleMapClick = (lat, lon) => {
+        setClickPoints(prev => {
+          if (!prev.start || (prev.start && prev.end)) {
+            // 1st Click: Set Origin, reset destination and route
+            setRoute(null);
+            return { start: [lat, lon], end: null };
+          } else {
+            // 2nd Click: Set Destination, trigger route planning
+            handlePlanRoute(prev.start[0], prev.start[1], lat, lon);
+            return { start: prev.start, end: [lat, lon] };
+          }
+        });
+      };
+
+      useEffect(() => {
+        window.__setOrigin = (lat, lon, name) => {
+          setSelectedSrc(name);
+          setRoute(null);
+          setClickPoints(prev => ({ start: [lat, lon], end: null }));
+        };
+        window.__setDest = (lat, lon, name) => {
+          setSelectedDst(name);
+          setClickPoints(prev => {
+            const startPt = prev.start || [28.6315, 77.2167];
+            handlePlanRoute(startPt[0], startPt[1], lat, lon);
+            return { start: startPt, end: [lat, lon] };
+          });
+        };
+        window.__viewStopArrivals = (stopId) => {
+          fetchStopArrivals(stopId);
+        };
+      }, []);
+
+      return (
+        <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '0 20px 40px 20px' }}>
+          {/* Header */}
+          <header style={{ marginBottom: '20px' }}>
+            <div className="top-tricolor-bar" />
+            <div className="glass-panel" style={{ padding: '20px 28px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.8rem' }}>🚌</span>
+                    <h1 style={{
+                      fontSize: '1.75rem',
+                      fontWeight: 800,
+                      background: 'linear-gradient(90deg, #FF9933, #FF6B35, #FFA07A)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                    }}>
+                      Delhi Bus Traffic Model & Journey Planner
+                    </h1>
+                  </div>
+                  <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: '4px' }}>
+                    Merged FastAPI + React Unified Architecture • 60 FPS GIS Engine • Zero Full-Page Reruns
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    background: status.is_live ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                    border: `1px solid ${status.is_live ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: status.is_live ? '#34d399' : '#fbbf24'
+                  }}>
+                    <span className={status.is_live ? "pulse-dot-green" : ""} style={{
+                      width: '8px', height: '8px', borderRadius: '50%',
+                      backgroundColor: status.is_live ? '#10b981' : '#f59e0b',
+                      display: 'inline-block'
+                    }} />
+                    {status.is_live ? "DELHI OTD LIVE STREAMING" : "SYNTHETIC SIMULATION BASELINE"}
+                  </div>
+
+                  <button
+                    onClick={handleManualSync}
+                    disabled={refreshing}
+                    style={{
+                      background: 'linear-gradient(135deg, #FF6B35 0%, #e85d04 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      cursor: refreshing ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 14px rgba(255, 107, 53, 0.35)',
+                    }}
+                  >
+                    {refreshing ? 'Syncing...' : '🔄 Sync Live OTD'}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                fontSize: '0.85rem', color: '#94a3b8', flexWrap: 'wrap', gap: '8px'
+              }}>
+                <div>⚡ Connected Fleet: <strong style={{ color: '#f1f5f9' }}>{status.total_active_fleet?.toLocaleString() || '0'} buses</strong> across Delhi NCR</div>
+                <div>⏱️ Last Sync: <strong style={{ color: '#38bdf8' }}>{status.last_sync_time || 'Just now'}</strong> (Auto-polled every 18s)</div>
+              </div>
+            </div>
+          </header>
+
+          {/* KPI Metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+            <div className="glass-panel" style={{ padding: '16px 20px' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TOTAL ACTIVE FLEET</span>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ffffff', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                {status.total_active_fleet?.toLocaleString() || '0'}
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Ingested live vehicle units</span>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '16px 20px' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>VEHICLES IN MOTION</span>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                {status.moving_buses?.toLocaleString() || '0'}
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Active velocity ≥ 5 km/h</span>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '16px 20px' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>IDLE / DWELL / SIGNALS</span>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                {status.idle_buses?.toLocaleString() || '0'}
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>At terminals & signals</span>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '16px 20px' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FLEET AVG VELOCITY</span>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#38bdf8', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                {status.fleet_avg_speed_kmh || 0} km/h
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>GPS displacement math</span>
+            </div>
+          </div>
+
+          {/* Route Result Banner with DTC Fare, CO2 & Turn-by-Turn Navigation */}
+          {route && (
+            <div className="glass-panel glass-panel-glow" style={{ marginBottom: '20px', padding: '16px 22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase' }}>
+                    OPTIMIZED ROUTE CALCULATED (DYNAMIC A*)
+                  </span>
+                  <div style={{ fontSize: '0.92rem', color: '#f1f5f9', fontWeight: 600 }}>
+                    Traversing {route.segments_count} Delhi transit corridors
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div><span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>DISTANCE</span><div style={{ fontSize: '1.15rem', fontWeight: 700 }}>{route.distance_km} km</div></div>
+                  <div><span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>DYNAMIC ETA</span><div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#10b981' }}>{route.eta_minutes} mins</div></div>
+                  <div><span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>DTC FARE</span><div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8' }}>₹{route.fare_inr || 15}</div></div>
+                  <div><span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>CO₂ SAVED</span><div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#34d399' }}>🌱 {route.carbon_saved_kg || 0.8} kg</div></div>
+                  <div><span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>SPEED</span><div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ff9933' }}>{route.effective_speed_kmh} km/h</div></div>
+                  <button
+                    onClick={() => setShowItinerary(!showItinerary)}
+                    style={{
+                      background: 'rgba(255, 107, 53, 0.2)', border: '1px solid rgba(255, 107, 53, 0.5)',
+                      color: '#ff9933', padding: '6px 14px', borderRadius: '8px', fontSize: '0.8rem',
+                      fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >
+                    {showItinerary ? '▲ Hide Steps' : `📋 Itinerary Steps (${route.itinerary ? route.itinerary.length : 0})`}
+                  </button>
+                </div>
+              </div>
+
+              {/* Turn-by-Turn Journey Itinerary Card */}
+              {showItinerary && route.itinerary && route.itinerary.length > 0 && (
+                <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ff9933', marginBottom: '10px', textTransform: 'uppercase' }}>
+                    🧭 Turn-by-Turn Commuter Itinerary
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                    {route.itinerary.map((step, idx) => (
+                      <div key={idx} style={{
+                        background: 'rgba(15, 23, 42, 0.65)', border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '8px', padding: '10px 14px', display: 'flex', gap: '12px', alignItems: 'center'
+                      }}>
+                        <div style={{
+                          width: '28px', height: '28px', borderRadius: '50%',
+                          background: idx === 0 ? '#10b981' : (idx === route.itinerary.length - 1 ? '#ef4444' : '#0284c7'),
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 800, color: '#fff', flexShrink: 0
+                        }}>
+                          {idx === 0 ? '🟢' : (idx === route.itinerary.length - 1 ? '🏁' : idx + 1)}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#f1f5f9' }}>{step.instruction}</div>
+                          <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '2px' }}>
+                            {step.corridor ? `Via: ${step.corridor} • ` : ''}{step.distance_km > 0 ? `${step.distance_km} km • ~${step.duration_minutes} mins` : 'Origin Boarding Point'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Navigation Tabs */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
+            {[
+              { id: 'map', label: '🗺️ Map' },
+              { id: 'fleet', label: '🚌 Active Bus Fleet Explorer' },
+              { id: 'ml', label: '🔮 ML Traffic Forecasting' },
+              { id: 'alerts', label: `🚨 Transit Alerts & Bunching (${(alerts.bottlenecks?.length || 0) + (alerts.bunching?.length || 0)})` },
+              { id: 'branching', label: `🔀 Multi-Route Corridor & Bus Branching (${branchData?.total_buses_in_transit || 0} buses)` },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  background: activeTab === tab.id ? 'linear-gradient(135deg, rgba(255, 107, 53, 0.25), rgba(255, 153, 51, 0.15))' : 'rgba(15, 23, 42, 0.6)',
+                  color: activeTab === tab.id ? '#ff9933' : '#94a3b8',
+                  border: `1px solid ${activeTab === tab.id ? 'rgba(255, 107, 53, 0.5)' : 'rgba(255, 255, 255, 0.08)'}`,
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* TAB 1: MAP VIEW */}
+          {activeTab === 'map' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '20px', alignItems: 'start' }}>
+              <LeafletMapContainer
+                fleet={fleet}
+                segments={segments}
+                stops={stops}
+                route={route}
+                corridorFocus={corridorFocus}
+                layerVisibility={layerVisibility}
+                onMapClick={handleMapClick}
+                clickPoints={clickPoints}
+              />
+
+              {/* Sidebar Controls */}
+              <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {/* Live Next-Bus ETA Countdown Board */}
+                {selectedStopData && (
+                  <div style={{
+                    background: 'rgba(2, 132, 199, 0.12)', border: '1px solid rgba(56, 189, 248, 0.4)',
+                    borderRadius: '10px', padding: '12px 14px', marginBottom: '6px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#38bdf8' }}>
+                        🚏 {selectedStopData.stop_name}
+                      </div>
+                      <button
+                        onClick={() => setSelectedStopData(null)}
+                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer', padding: '0 4px' }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '8px' }}>
+                      Incoming real-time arrivals (within 7.5km):
+                    </div>
+                    {selectedStopData.arrivals && selectedStopData.arrivals.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+                        {selectedStopData.arrivals.slice(0, 6).map((arr, i) => (
+                          <div key={i} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            background: 'rgba(15, 23, 42, 0.7)', padding: '6px 10px', borderRadius: '6px', fontSize: '0.76rem'
+                          }}>
+                            <div>
+                              <strong style={{ color: '#f1f5f9' }}>Route {arr.route_id}</strong>
+                              <span style={{ fontSize: '0.7rem', color: '#64748b', marginLeft: '6px' }}>#{arr.bus_id}</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontWeight: 800, color: arr.eta_minutes <= 5 ? '#10b981' : '#ff9933' }}>
+                                {arr.eta_minutes} mins
+                              </span>
+                              <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{arr.distance_km}km • {arr.current_speed_kmh || arr.speed_kmh || 0}km/h</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontStyle: 'italic' }}>
+                        No incoming buses detected within 7.5km right now.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ff9933', marginBottom: '10px' }}>
+                    ⚡ POPULAR COMMUTER PRESETS
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {[
+                      { name: '🏢 Rohini ➔ CP', src: 'Rohini Sec-3', dst: 'Connaught Place' },
+                      { name: '🏥 KG ➔ AIIMS', src: 'ISBT Kashmere Gate', dst: 'AIIMS' },
+                      { name: '✈️ Dwarka ➔ CP', src: 'Dwarka Sec-21', dst: 'Connaught Place' },
+                      { name: '🏛️ Janakpuri ➔ ITO', src: 'Janakpuri', dst: 'ITO' },
+                    ].map((p, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setSelectedSrc(p.src);
+                          setSelectedDst(p.dst);
+                          const sObj = stops.find(s => s.name === p.src);
+                          const dObj = stops.find(s => s.name === p.dst);
+                          if (sObj && dObj) handlePlanRoute(sObj.lat, sObj.lon, dObj.lat, dObj.lon);
+                        }}
+                        style={{
+                          background: 'rgba(30, 41, 59, 0.7)',
+                          border: '1px solid rgba(255, 107, 53, 0.25)',
+                          color: '#f1f5f9',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+                <div>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ff9933', marginBottom: '10px' }}>
+                    🎯 PLAN CUSTOM JOURNEY
+                  </h3>
+                  <div style={{ marginBottom: '10px' }}>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>🟢 Origin Stop</label>
+                    <select
+                      value={selectedSrc}
+                      onChange={e => setSelectedSrc(e.target.value)}
+                      style={{ width: '100%', background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(255, 107, 53, 0.3)', borderRadius: '8px', padding: '8px 12px' }}
+                    >
+                      {stops.map(s => <option key={s.stop_id} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>🔴 Destination Stop</label>
+                    <select
+                      value={selectedDst}
+                      onChange={e => setSelectedDst(e.target.value)}
+                      style={{ width: '100%', background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(255, 107, 53, 0.3)', borderRadius: '8px', padding: '8px 12px' }}
+                    >
+                      {stops.map(s => <option key={s.stop_id} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => {
+                        const sObj = stops.find(s => s.name === selectedSrc);
+                        const dObj = stops.find(s => s.name === selectedDst);
+                        if (sObj && dObj) handlePlanRoute(sObj.lat, sObj.lon, dObj.lat, dObj.lon);
+                      }}
+                      style={{
+                        flex: 1, background: 'linear-gradient(135deg, #FF6B35 0%, #e85d04 100%)',
+                        color: '#fff', border: 'none', padding: '10px 14px', borderRadius: '8px',
+                        fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+                      }}
+                    >
+                      Compute A* Route
+                    </button>
+                    <button
+                      onClick={() => { setRoute(null); setClickPoints({ start: null, end: null }); }}
+                      style={{ background: '#1e293b', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer' }}
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  {/* Bolo Delhi Voice-Activated Route Planner */}
+                  <div style={{ marginTop: '12px' }}>
+                    <button
+                      onClick={handleVoiceSearch}
+                      style={{
+                        width: '100%',
+                        background: isListening ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(255, 107, 53, 0.15)',
+                        border: `1px solid ${isListening ? '#ef4444' : 'rgba(255, 107, 53, 0.4)'}`,
+                        color: isListening ? '#ffffff' : '#ff9933',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <span>{isListening ? '🔴' : '🎙️'}</span>
+                      {isListening ? 'Listening... Speak Now' : 'Bolo Delhi (Voice Route Search)'}
+                    </button>
+                    {voiceStatus && (
+                      <div style={{ marginTop: '6px', fontSize: '0.74rem', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', padding: '6px 10px', borderRadius: '6px' }}>
+                        {voiceStatus}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: '10px', fontSize: '0.75rem', color: '#64748b' }}>
+                    💡 <em>Click anywhere on map to set Origin & Destination directly.</em>
+                  </div>
+                </div>
+
+                <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+                <div>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ff9933', marginBottom: '8px' }}>
+                    📍 FOCUS DELHI REGION
+                  </h3>
+                  <select
+                    value={corridorFocus}
+                    onChange={e => setCorridorFocus(e.target.value)}
+                    style={{ width: '100%', background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(255, 107, 53, 0.3)', borderRadius: '8px', padding: '8px 12px' }}
+                  >
+                    <option value="all">🗺️ All Delhi (Overview)</option>
+                    <option value="central">🏛️ Central Delhi (CP / India Gate)</option>
+                    <option value="north">🏰 North Delhi (ISBT / Red Fort)</option>
+                    <option value="south">🏥 South Delhi (AIIMS / Ring Road)</option>
+                    <option value="east">🌉 East Delhi (Vikas Marg)</option>
+                    <option value="west">✈️ West Delhi (Dwarka / IGI)</option>
+                  </select>
+                </div>
+
+                <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+                <div>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ff9933', marginBottom: '8px' }}>
+                    👁️ MAP LAYERS
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={layerVisibility.segments} onChange={() => setLayerVisibility(p => ({...p, segments: !p.segments}))} style={{ accentColor: '#ff6b35' }} />
+                      Road Speeds
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={layerVisibility.fleet} onChange={() => setLayerVisibility(p => ({...p, fleet: !p.fleet}))} style={{ accentColor: '#ff6b35' }} />
+                      Live Fleet
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={layerVisibility.stops} onChange={() => setLayerVisibility(p => ({...p, stops: !p.stops}))} style={{ accentColor: '#ff6b35' }} />
+                      Bus Stops
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={layerVisibility.walkshed} onChange={() => setLayerVisibility(p => ({...p, walkshed: !p.walkshed}))} style={{ accentColor: '#ff6b35' }} />
+                      500m Walkshed
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: BUS TABLE */}
+          {activeTab === 'fleet' && <BusTableComponent fleet={fleet} />}
+
+          {/* TAB 3: PREDICTIONS */}
+          {activeTab === 'ml' && <PredictionsComponent predictions={predictions} />}
+
+          {/* TAB 4: ALERTS & BUNCHING */}
+          {activeTab === 'alerts' && <AlertsComponent alerts={alerts} />}
+
+          {/* TAB 5: MULTI-ROUTE CORRIDOR & BUS BRANCHING BETWEEN 2 POINTS */}
+          {activeTab === 'branching' && (
+            <CorridorBranchingComponent
+              stops={stops}
+              origin={branchOrigin}
+              destination={branchDest}
+              setOrigin={setBranchOrigin}
+              setDestination={setBranchDest}
+              branchData={branchData}
+              loading={branchLoading}
+              onRefresh={() => fetchBranches(branchOrigin, branchDest)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // Leaflet GIS Map Container (60 FPS, persistent instance)
+    function LeafletMapContainer({ fleet, segments, stops, route, corridorFocus, layerVisibility, onMapClick, clickPoints }) {
+      const mapRef = useRef(null);
+      const instanceRef = useRef(null);
+      const roadGroup = useRef(null);
+      const fleetGroup = useRef(null);
+      const stopsGroup = useRef(null);
+      const walkshedGroup = useRef(null);
+      const routeGroup = useRef(null);
+      const clickGroup = useRef(null);
+      const [mapReady, setMapReady] = useState(false);
+
+      const onMapClickRef = useRef(onMapClick);
+      useEffect(() => {
+        onMapClickRef.current = onMapClick;
+      }, [onMapClick]);
+
+      useEffect(() => {
+        if (!mapRef.current || instanceRef.current) return;
+        const map = L.map(mapRef.current, { center: [28.6139, 77.2090], zoom: 12 });
+        instanceRef.current = map;
+
+        // Street Maps: OpenStreetMap + Esri World Street Map (high-res fallback)
+        const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+
+        const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          attribution: 'Tiles &copy; Esri',
+        });
+
+        const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          attribution: 'Tiles &copy; Esri',
+        });
+
+        const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; CARTO',
+        });
+
+        L.control.layers({
+          '🗺️ OpenStreetMap': osm,
+          '🏛️ Esri Street Map': esriStreet,
+          '🛰️ Satellite (Esri)': sat,
+          '☀️ Clean Light': light,
+        }, null, { position: 'topright' }).addTo(map);
+
+        roadGroup.current = L.layerGroup().addTo(map);
+        fleetGroup.current = L.layerGroup().addTo(map);
+        stopsGroup.current = L.layerGroup().addTo(map);
+        walkshedGroup.current = L.layerGroup().addTo(map);
+        routeGroup.current = L.layerGroup().addTo(map);
+        clickGroup.current = L.layerGroup().addTo(map);
+
+        map.on('click', e => {
+          if (onMapClickRef.current) {
+            onMapClickRef.current(e.latlng.lat, e.latlng.lng);
+          }
+        });
+
+        setTimeout(() => {
+          if (map) map.invalidateSize();
+        }, 200);
+
+        setMapReady(true);
+
+        return () => {
+          map.remove();
+          instanceRef.current = null;
+          roadGroup.current = null;
+          fleetGroup.current = null;
+          stopsGroup.current = null;
+          walkshedGroup.current = null;
+          routeGroup.current = null;
+          clickGroup.current = null;
+          setMapReady(false);
+        };
+        window.__viewStopArrivals = (stopId) => {
+          fetchStopArrivals(stopId);
+        };
+      }, []);
+
+      // Fly to corridor
+      useEffect(() => {
+        const map = instanceRef.current;
+        if (!map) return;
+        const coords = {
+          'all': [[28.6139, 77.2090], 12],
+          'central': [[28.6200, 77.2180], 13],
+          'north': [[28.6672, 77.2284], 14],
+          'south': [[28.5672, 77.2100], 13],
+          'east': [[28.6364, 77.2956], 13],
+          'west': [[28.5950, 77.0700], 13],
+        };
+        const t = coords[corridorFocus] || coords['all'];
+        map.flyTo(t[0], t[1], { duration: 1.0 });
+      }, [corridorFocus]);
+
+      // Roads
+      useEffect(() => {
+        if (!mapReady || !roadGroup.current) return;
+        roadGroup.current.clearLayers();
+        if (!layerVisibility.segments || !segments) return;
+        segments.forEach(seg => {
+          const color = CONGESTION_COLORS[seg.congestion_level] || '#2ecc71';
+          const p = L.polyline(seg.coordinates, { color, weight: 4, opacity: 0.88 });
+          p.bindPopup(`<b>🛣️ ${seg.road_name}</b><br/>Speed: ${seg.speed_kmh} km/h<br/>Status: ${(seg.congestion_level || '').toUpperCase()}`);
+          p.addTo(roadGroup.current);
+        });
+      }, [segments, layerVisibility.segments, mapReady]);
+
+      // Fleet
+      useEffect(() => {
+        if (!mapReady || !fleetGroup.current) return;
+        fleetGroup.current.clearLayers();
+        if (!layerVisibility.fleet || !fleet) return;
+        fleet.slice(0, 450).forEach(bus => {
+          const spd = bus.speed || 0;
+          let color = spd >= 20 ? '#10b981' : (spd >= 5 ? '#f59e0b' : '#ef4444');
+          const m = L.circleMarker([bus.lat, bus.lon], { radius: 6, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.85 });
+          m.bindPopup(`<b>🚌 Bus #${bus.bus_id}</b><br/>Route: ${bus.route_id}<br/>Speed: <b>${spd.toFixed(1)} km/h</b><br/>Status: ${bus.status}`);
+          m.addTo(fleetGroup.current);
+        });
+      }, [fleet, layerVisibility.fleet, mapReady]);
+
+      // Stops & Walksheds
+      useEffect(() => {
+        if (!mapReady || !stopsGroup.current || !walkshedGroup.current) return;
+        stopsGroup.current.clearLayers();
+        walkshedGroup.current.clearLayers();
+        if (!stops) return;
+
+        if (layerVisibility.stops) {
+          stops.forEach(s => {
+            const m = L.circleMarker([s.lat, s.lon], {
+              radius: 6,
+              fillColor: '#0284c7',
+              color: '#ffffff',
+              weight: 2,
+              fillOpacity: 0.9,
+            });
+
+            const routesArr = s.routes || [];
+            const routeList = routesArr.slice(0, 3).map(r => `<div style="font-size:10px; color:#cbd5e1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">• ${r}</div>`).join('');
+            const moreCount = routesArr.length > 3 ? `<div style="font-size:9.5px; color:#94a3b8;">+${routesArr.length - 3} more lines</div>` : '';
+
+            const popupContent = `
+              <div style="font-family:inherit; min-width:180px; padding:2px;">
+                <div style="font-weight:700; color:#38bdf8; font-size:13px; margin-bottom:2px;">🚏 ${s.name}</div>
+                <div style="font-size:10.5px; color:#94a3b8; margin-bottom:6px;">Stop ID: <b>${s.stop_id}</b> | GPS: ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</div>
+                ${routeList ? `<div style="margin-bottom:6px;"><b>Routes Served:</b>${routeList}${moreCount}</div>` : ''}
+                <div style="display:flex; gap:6px; margin-top:8px;">
+                  <button onclick="window.__setOrigin(${s.lat}, ${s.lon}, '${s.name.replace(/'/g, "\\'")}')" style="flex:1; background:#10b981; color:#fff; border:none; padding:5px 8px; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer;">🟢 Set Origin</button>
+                  <button onclick="window.__setDest(${s.lat}, ${s.lon}, '${s.name.replace(/'/g, "\\'")}')" style="flex:1; background:#ef4444; color:#fff; border:none; padding:5px 8px; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer;">🔴 Set Dest</button>
+                </div>
+                <button onclick="window.__viewStopArrivals('${s.stop_id}')" style="width:100%; margin-top:6px; background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color:#fff; border:none; padding:6px 8px; border-radius:6px; font-size:10.5px; font-weight:700; cursor:pointer;">⏱️ Live Next-Bus ETA Board</button>
+              </div>
+            `;
+            m.bindPopup(popupContent);
+            m.bindTooltip(`🚏 ${s.name}`, { direction: 'top', offset: [0, -6] });
+            m.addTo(stopsGroup.current);
+          });
+        }
+
+        if (layerVisibility.walkshed) {
+          stops.forEach(s => {
+            L.circle([s.lat, s.lon], {
+              radius: 500,
+              color: '#0ea5e9',
+              fillColor: '#0ea5e9',
+              fillOpacity: 0.07,
+              weight: 1,
+              dashArray: '4 4',
+            }).addTo(walkshedGroup.current);
+          });
+        }
+      }, [stops, layerVisibility.stops, layerVisibility.walkshed, mapReady]);
+
+      // Route
+      useEffect(() => {
+        if (!mapReady || !routeGroup.current) return;
+        routeGroup.current.clearLayers();
+        if (route && route.geojson) {
+          const l = L.geoJSON(route.geojson, { style: { color: '#00f0ff', weight: 6, opacity: 0.95, dashArray: '8 4' } }).addTo(routeGroup.current);
+          if (instanceRef.current && l.getBounds().isValid()) instanceRef.current.fitBounds(l.getBounds(), { padding: [40, 40] });
+        }
+      }, [route, mapReady]);
+
+      // Origin & Destination Journey Markers
+      useEffect(() => {
+        if (!mapReady || !clickGroup.current) return;
+        clickGroup.current.clearLayers();
+
+        if (clickPoints.start) {
+          const originHtml = `
+            <div style="transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; pointer-events: auto; cursor: pointer;">
+              <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; padding: 4px 10px; border-radius: 20px; font-weight: 800; font-size: 11px; letter-spacing: 0.05em; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.65); border: 2px solid #ffffff; white-space: nowrap;">
+                🟢 ORIGIN
+              </div>
+              <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #059669; margin-top: -1px;"></div>
+            </div>`;
+          const originIcon = L.divIcon({ className: 'origin-pin-icon', html: originHtml, iconSize: [0, 0] });
+          L.marker(clickPoints.start, { icon: originIcon, zIndexOffset: 2000 })
+            .bindPopup(`<b>🟢 Journey Origin</b><br/>GPS: ${clickPoints.start[0].toFixed(4)}, ${clickPoints.start[1].toFixed(4)}`)
+            .addTo(clickGroup.current);
+          L.circleMarker(clickPoints.start, { radius: 7, fillColor: '#10b981', color: '#ffffff', weight: 2.5, fillOpacity: 1 }).addTo(clickGroup.current);
+        }
+
+        if (clickPoints.end) {
+          const destHtml = `
+            <div style="transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; pointer-events: auto; cursor: pointer;">
+              <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff; padding: 4px 10px; border-radius: 20px; font-weight: 800; font-size: 11px; letter-spacing: 0.05em; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.65); border: 2px solid #ffffff; white-space: nowrap;">
+                🔴 DESTINATION
+              </div>
+              <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #dc2626; margin-top: -1px;"></div>
+            </div>`;
+          const destIcon = L.divIcon({ className: 'dest-pin-icon', html: destHtml, iconSize: [0, 0] });
+          L.marker(clickPoints.end, { icon: destIcon, zIndexOffset: 2000 })
+            .bindPopup(`<b>🔴 Journey Destination</b><br/>GPS: ${clickPoints.end[0].toFixed(4)}, ${clickPoints.end[1].toFixed(4)}`)
+            .addTo(clickGroup.current);
+          L.circleMarker(clickPoints.end, { radius: 7, fillColor: '#ef4444', color: '#ffffff', weight: 2.5, fillOpacity: 1 }).addTo(clickGroup.current);
+        }
+      }, [clickPoints, mapReady]);
+
+      return (
+        <div style={{ position: 'relative', width: '100%', height: '620px', borderRadius: '14px', overflow: 'hidden' }}>
+          <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+          <div style={{
+            position: 'absolute', bottom: '24px', right: '24px', width: '180px',
+            background: 'rgba(15, 23, 42, 0.92)', border: '1px solid rgba(255, 107, 53, 0.45)',
+            borderRadius: '12px', padding: '12px 14px', backdropFilter: 'blur(12px)',
+            zIndex: 1000, fontSize: '11px', lineHeight: 1.5,
+          }}>
+            <b style={{ color: '#ff9933', fontSize: '11.5px', display: 'block', marginBottom: '6px' }}>🚦 TRAFFIC VELOCITY</b>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '3px' }}><span style={{ display: 'inline-block', width: '14px', height: '4px', background: '#2ecc71', marginRight: '8px', borderRadius: '2px' }} />Free Flow (&gt;28)</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '3px' }}><span style={{ display: 'inline-block', width: '14px', height: '4px', background: '#f1c40f', marginRight: '8px', borderRadius: '2px' }} />Moderate (18-28)</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '3px' }}><span style={{ display: 'inline-block', width: '14px', height: '4px', background: '#e67e22', marginRight: '8px', borderRadius: '2px' }} />Heavy (10-18)</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}><span style={{ display: 'inline-block', width: '14px', height: '4px', background: '#e74c3c', marginRight: '8px', borderRadius: '2px' }} />Gridlock (&lt;10)</div>
+            <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.12)', margin: '4px 0 6px 0' }} />
+            <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ display: 'inline-block', width: '14px', height: '4px', background: '#00f0ff', marginRight: '8px', borderRadius: '2px' }} />Optimal Route</div>
+          </div>
+        </div>
+      );
+    }
+
+    // Bus Table Component with Instant Search
+    function BusTableComponent({ fleet }) {
+      const [search, setSearch] = useState('');
+      const [statusFilter, setStatusFilter] = useState('ALL');
+      const [page, setPage] = useState(0);
+
+      const filtered = useMemo(() => {
+        if (!fleet) return [];
+        return fleet.filter(b => {
+          const mSearch = search === '' || b.bus_id.toLowerCase().includes(search.toLowerCase()) || b.route_id.toLowerCase().includes(search.toLowerCase());
+          const mStatus = statusFilter === 'ALL' || (statusFilter === 'FREE' && b.status === 'Free Flow') || (statusFilter === 'MOD' && b.status === 'Moderate') || (statusFilter === 'SLOW' && b.status.includes('Slow'));
+          return mSearch && mStatus;
+        });
+      }, [fleet, search, statusFilter]);
+
+      const rows = filtered.slice(page * 50, (page + 1) * 50);
+
+      return (
+        <div className="glass-panel" style={{ padding: '20px', marginTop: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f1f5f9' }}>🚌 Active Bus Fleet Explorer</h2>
+              <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>Showing {filtered.length.toLocaleString()} of {fleet.length.toLocaleString()} buses • 0ms instant filter</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            <input
+              type="text"
+              placeholder="Search Bus ID or Route (e.g. DL1PC, 729, 419...)"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(0); }}
+              style={{ flex: 1, minWidth: '220px', background: '#0f172a', border: '1px solid rgba(255, 107, 53, 0.25)', borderRadius: '8px', padding: '8px 14px', color: '#f1f5f9' }}
+            />
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[
+                { id: 'ALL', label: 'All' },
+                { id: 'FREE', label: '🟢 Free Flow' },
+                { id: 'MOD', label: '🟡 Moderate' },
+                { id: 'SLOW', label: '🔴 Slow/Dwell' },
+              ].map(btn => (
+                <button
+                  key={btn.id}
+                  onClick={() => { setStatusFilter(btn.id); setPage(0); }}
+                  style={{
+                    background: statusFilter === btn.id ? 'linear-gradient(135deg, #FF6B35 0%, #e85d04 100%)' : '#1e293b',
+                    color: statusFilter === btn.id ? '#fff' : '#cbd5e1',
+                    border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem',
+                  }}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto', maxHeight: '420px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+              <thead style={{ background: '#1e293b', position: 'sticky', top: 0 }}>
+                <tr>
+                  <th style={{ padding: '10px 14px', color: '#ff9933' }}>Bus ID</th>
+                  <th style={{ padding: '10px 14px', color: '#ff9933' }}>Route</th>
+                  <th style={{ padding: '10px 14px', color: '#ff9933' }}>Latitude</th>
+                  <th style={{ padding: '10px 14px', color: '#ff9933' }}>Longitude</th>
+                  <th style={{ padding: '10px 14px', color: '#ff9933', minWidth: '160px' }}>Velocity</th>
+                  <th style={{ padding: '10px 14px', color: '#ff9933' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((b, i) => {
+                  const spd = b.speed || 0;
+                  const c = spd >= 20 ? '#10b981' : (spd >= 5 ? '#f59e0b' : '#ef4444');
+                  return (
+                    <tr key={b.bus_id + i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(15, 23, 42, 0.4)' : 'transparent' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{b.bus_id}</td>
+                      <td style={{ padding: '10px 14px', color: '#38bdf8' }}>{b.route_id}</td>
+                      <td style={{ padding: '10px 14px', color: '#94a3b8' }}>{b.lat.toFixed(4)}</td>
+                      <td style={{ padding: '10px 14px', color: '#94a3b8' }}>{b.lon.toFixed(4)}</td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ minWidth: '55px', fontWeight: 600, color: c }}>{spd.toFixed(1)} km/h</span>
+                          <div style={{ flex: 1, height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.min(100, (spd / 60) * 100)}%`, height: '100%', background: c }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <span style={{ padding: '3px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: `${c}20`, color: c, border: `1px solid ${c}40` }}>
+                          {b.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // Predictions Component
+    function PredictionsComponent({ predictions }) {
+      return (
+        <div className="glass-panel" style={{ padding: '20px', marginTop: '20px' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '4px' }}>🔮 ML Traffic Velocity Forecasting</h2>
+          <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: '16px' }}>Gradient Boosting Regressor forecasting Delhi arterial speeds 30 & 60 minutes into the future</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+            {predictions.slice(0, 15).map((p, i) => (
+              <div key={i} style={{ background: 'rgba(30, 41, 59, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <strong style={{ fontSize: '0.85rem' }}>{p.road_name}</strong>
+                  <span style={{ fontSize: '0.7rem', color: '#ff9933' }}>{p.road_type}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                  <span>Now: <b>{p.current_speed_kmh} km/h</b></span>
+                  <span style={{ color: '#38bdf8' }}>+30m: <b>{p.forecast_30m_kmh} km/h</b></span>
+                  <span style={{ color: p.trend === 'Speeding Up' ? '#10b981' : (p.trend === 'Slowing Down' ? '#ef4444' : '#94a3b8'), fontWeight: 600 }}>{p.trend}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    
+    // Alerts & Bunching Component
+    function AlertsComponent({ alerts }) {
+      const bnecks = alerts.bottlenecks || [];
+      const bunch = alerts.bunching || [];
+
+      return (
+        <div className="glass-panel" style={{ padding: '24px', marginTop: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f1f5f9' }}>
+                🚨 Transit Congestion & Fleet Bunching Feed
+              </h2>
+              <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+                Real-time bottleneck detection & automated headway gap restoration algorithms
+              </p>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', background: '#1e293b', padding: '6px 12px', borderRadius: '8px' }}>
+              Last scan: {alerts.timestamp || 'Live'}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
+            {/* Left Column: Arterial Bottlenecks */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '1.1rem' }}>🛑</span>
+                <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#ef4444' }}>
+                  Arterial Bottlenecks ({bnecks.length})
+                </h3>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '520px', overflowY: 'auto' }}>
+                {bnecks.map((b, i) => (
+                  <div key={i} style={{
+                    background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px', padding: '12px 14px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <strong style={{ fontSize: '0.88rem', color: '#f87171' }}>{b.road_name}</strong>
+                      <span style={{
+                        fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '12px',
+                        background: '#ef444430', color: '#f87171', border: '1px solid #ef444450'
+                      }}>
+                        {b.congestion_level.toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#94a3b8', marginTop: '6px' }}>
+                      <span>Speed: <b style={{ color: '#f87171' }}>{b.speed_kmh} km/h</b> (Free flow: {b.free_flow_kmh} km/h)</span>
+                      <span>Delay: <b style={{ color: '#fbbf24' }}>+{b.delay_index}x</b></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right Column: Fleet Bunching */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#f59e0b' }}>
+                  Fleet Bunching / "Bus Clumping" ({bunch.length})
+                </h3>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '520px', overflowY: 'auto' }}>
+                {bunch.slice(0, 50).map((clump, i) => (
+                  <div key={i} style={{
+                    background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)',
+                    borderRadius: '8px', padding: '12px 14px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <strong style={{ fontSize: '0.88rem', color: '#fbbf24' }}>Route {clump.route_id}</strong>
+                      <span style={{
+                        fontSize: '0.72rem', fontWeight: 700, color: '#f59e0b', background: '#f59e0b25',
+                        padding: '2px 8px', borderRadius: '10px'
+                      }}>
+                        Headway Gap: {clump.gap_meters || clump.distance_m}m
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '4px' }}>
+                      Clumped units: <b>#{clump.bus_1 || clump.bus_1_id}</b> & <b>#{clump.bus_2 || clump.bus_2_id}</b>
+                    </div>
+                    <div style={{ fontSize: '0.73rem', color: '#38bdf8', marginTop: '6px', background: 'rgba(56, 189, 248, 0.1)', padding: '5px 8px', borderRadius: '6px' }}>
+                      💡 <b>Dispatch Action:</b> {clump.recommendation}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    
+    // Branch Map Container (Leaflet)
+    function BranchMapContainer({ origin, destination, branches, selectedBranchId, onSelectBranch }) {
+      const bMapRef = useRef(null);
+      const bInstanceRef = useRef(null);
+      const bLayerGroup = useRef(null);
+
+      useEffect(() => {
+        if (!bMapRef.current || bInstanceRef.current) return;
+        const bmap = L.map(bMapRef.current, { center: [28.6139, 77.2090], zoom: 12 });
+        bInstanceRef.current = bmap;
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(bmap);
+
+        bLayerGroup.current = L.layerGroup().addTo(bmap);
+
+        setTimeout(() => { if (bmap) bmap.invalidateSize(); }, 250);
+
+        return () => {
+          bmap.remove();
+          bInstanceRef.current = null;
+          bLayerGroup.current = null;
+        };
+      }, []);
+
+      // Draw Branches, Origin, Destination & All Buses
+      useEffect(() => {
+        const bmap = bInstanceRef.current;
+        if (!bmap || !bLayerGroup.current || !origin || !destination) return;
+        bLayerGroup.current.clearLayers();
+
+        const allBounds = [];
+
+        // 1. Origin Marker
+        const oLatLon = [origin.lat, origin.lon];
+        allBounds.push(oLatLon);
+        const oHtml = `
+          <div style="transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center;">
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #fff; padding: 4px 10px; border-radius: 20px; font-weight: 800; font-size: 11px; border: 2px solid #fff; box-shadow: 0 4px 14px rgba(16,185,129,0.7); white-space: nowrap;">
+              🟢 POINT A: ${origin.name}
+            </div>
+            <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #059669;"></div>
+          </div>`;
+        L.marker(oLatLon, { icon: L.divIcon({ className: 'b-o-pin', html: oHtml, iconSize: [0, 0] }) }).addTo(bLayerGroup.current);
+        L.circleMarker(oLatLon, { radius: 7, fillColor: '#10b981', color: '#fff', weight: 2.5, fillOpacity: 1 }).addTo(bLayerGroup.current);
+
+        // 2. Destination Marker
+        const dLatLon = [destination.lat, destination.lon];
+        allBounds.push(dLatLon);
+        const dHtml = `
+          <div style="transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center;">
+            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #fff; padding: 4px 10px; border-radius: 20px; font-weight: 800; font-size: 11px; border: 2px solid #fff; box-shadow: 0 4px 14px rgba(239,68,68,0.7); white-space: nowrap;">
+              🔴 POINT B: ${destination.name}
+            </div>
+            <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #dc2626;"></div>
+          </div>`;
+        L.marker(dLatLon, { icon: L.divIcon({ className: 'b-d-pin', html: dHtml, iconSize: [0, 0] }) }).addTo(bLayerGroup.current);
+        L.circleMarker(dLatLon, { radius: 7, fillColor: '#ef4444', color: '#fff', weight: 2.5, fillOpacity: 1 }).addTo(bLayerGroup.current);
+
+        // 3. Draw Branches and their Buses
+        (branches || []).forEach(branch => {
+          const isSelected = selectedBranchId === 'ALL' || selectedBranchId === branch.branch_id;
+          const opacity = isSelected ? 0.95 : 0.25;
+          const weight = isSelected ? 6 : 3;
+
+          if (branch.coordinates && branch.coordinates.length > 1) {
+            const poly = L.polyline(branch.coordinates, {
+              color: branch.color,
+              weight: weight,
+              opacity: opacity,
+              dashArray: branch.branch_id === 'BR_ALPHA' ? null : '6 4',
+            }).addTo(bLayerGroup.current);
+
+            poly.bindPopup(`
+              <div style="font-family: inherit; padding: 2px;">
+                <b style="color: ${branch.color}; font-size: 13px;">${branch.name}</b><br/>
+                <span style="font-size: 11px; color: #cbd5e1;">Via: ${branch.via}</span><br/>
+                <span style="font-size: 11px; color: #94a3b8;">Active Buses: <b>${branch.total_active_buses}</b> | Speed: <b>${branch.corridor_speed_kmh} km/h</b></span>
+              </div>
+            `);
+
+            branch.coordinates.forEach(c => allBounds.push(c));
+          }
+
+          // Plot active buses for this branch
+          if (isSelected) {
+            (branch.buses || []).forEach(bus => {
+              const bMarker = L.circleMarker([bus.lat, bus.lon], {
+                radius: 7,
+                fillColor: branch.color,
+                color: '#ffffff',
+                weight: 2,
+                fillOpacity: 0.95,
+              });
+
+              bMarker.bindPopup(`
+                <div style="font-family: inherit; min-width: 170px; padding: 2px;">
+                  <div style="font-weight: 700; color: ${branch.color}; font-size: 13px;">🚌 Bus #${bus.bus_id}</div>
+                  <div style="font-size: 11px; color: #94a3b8; margin: 2px 0 6px 0;">Route: <b>${bus.route_id}</b> | Branch: <b>${branch.name.split(':')[0]}</b></div>
+                  <div style="background: rgba(15, 23, 42, 0.8); padding: 6px 8px; border-radius: 6px; font-size: 11px; line-height: 1.5;">
+                    <div>Velocity: <b style="color: #10b981;">${bus.speed_kmh} km/h</b></div>
+                    <div>Progress: <b>${bus.progress_pct}%</b> along corridor</div>
+                    <div>Distance to Dest: <b>${bus.dist_to_destination_km} km</b></div>
+                    <div>ETA to Destination: <b style="color: #ff9933;">${bus.eta_to_dest_mins} mins</b></div>
+                    <div style="color: #38bdf8; font-weight: 600; margin-top: 2px;">Status: ${bus.status}</div>
+                  </div>
+                </div>
+              `);
+
+              bMarker.addTo(bLayerGroup.current);
+            });
+          }
+        });
+
+        if (allBounds.length > 0) {
+          bmap.fitBounds(allBounds, { padding: [50, 50] });
+        }
+      }, [origin, destination, branches, selectedBranchId]);
+
+      return (
+        <div style={{ position: 'relative', width: '100%', height: '540px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255, 107, 53, 0.3)' }}>
+          <div ref={bMapRef} style={{ width: '100%', height: '100%' }} />
+          <div style={{
+            position: 'absolute', bottom: '16px', right: '16px', background: 'rgba(15, 23, 42, 0.92)',
+            border: '1px solid rgba(255, 255, 255, 0.15)', borderRadius: '10px', padding: '10px 14px',
+            backdropFilter: 'blur(10px)', zIndex: 1000, fontSize: '11px', minWidth: '180px'
+          }}>
+            <b style={{ color: '#ff9933', display: 'block', marginBottom: '6px' }}>🔀 CORRIDOR BRANCHES</b>
+            {(branches || []).map(b => (
+              <div key={b.branch_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', cursor: 'pointer' }} onClick={() => onSelectBranch(b.branch_id)}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: b.color, display: 'inline-block' }} />
+                <span style={{ color: '#f1f5f9', fontWeight: 600 }}>{b.name.split(':')[0]}</span>
+                <span style={{ color: '#94a3b8', marginLeft: 'auto' }}>({b.total_active_buses} buses)</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Main Multi-Route Corridor & Bus Branching Component
+    function CorridorBranchingComponent({ stops, origin, destination, setOrigin, setDestination, branchData, loading, onRefresh }) {
+      const [selectedBranchId, setSelectedBranchId] = useState('ALL');
+
+      const handleSwap = () => {
+        const temp = origin;
+        setOrigin(destination);
+        setDestination(temp);
+      };
+
+      const branches = branchData?.branches || [];
+      const recommended = branches[0];
+
+      return (
+        <div className="glass-panel" style={{ padding: '24px', marginTop: '20px' }}>
+          {/* Header Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.5rem' }}>🔀</span>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f1f5f9' }}>
+                  Multi-Route Corridor & Bus Branching Engine
+                </h2>
+              </div>
+              <p style={{ fontSize: '0.84rem', color: '#94a3b8', marginTop: '4px' }}>
+                Reads every Delhi bus route, groups parallel transit corridors into branches, and tracks all live buses running between 2 points in real-time
+              </p>
+            </div>
+
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              style={{
+                background: 'linear-gradient(135deg, #FF6B35 0%, #e85d04 100%)',
+                color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px',
+                fontWeight: 600, fontSize: '0.85rem', cursor: loading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {loading ? 'Analyzing Corridors...' : '🔄 Recalculate Live Branches'}
+            </button>
+          </div>
+
+          {/* OD Selection Bar */}
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.75)', border: '1px solid rgba(255, 107, 53, 0.35)',
+            borderRadius: '12px', padding: '16px 20px', marginBottom: '20px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '220px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981', display: 'block', marginBottom: '4px' }}>
+                  🟢 POINT A (ORIGIN)
+                </label>
+                <select
+                  value={origin}
+                  onChange={e => setOrigin(e.target.value)}
+                  style={{ width: '100%', background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '8px', padding: '10px 12px', fontWeight: 600 }}
+                >
+                  {stops.map(s => <option key={s.stop_id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <button
+                onClick={handleSwap}
+                title="Swap Origin and Destination"
+                style={{
+                  background: 'rgba(30, 41, 59, 0.8)', border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#ff9933', width: '40px', height: '40px', borderRadius: '50%',
+                  cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  alignSelf: 'flex-end', marginBottom: '2px'
+                }}
+              >
+                ⇄
+              </button>
+
+              <div style={{ flex: 1, minWidth: '220px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ef4444', display: 'block', marginBottom: '4px' }}>
+                  🔴 POINT B (DESTINATION)
+                </label>
+                <select
+                  value={destination}
+                  onChange={e => setDestination(e.target.value)}
+                  style={{ width: '100%', background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '8px', padding: '10px 12px', fontWeight: 600 }}
+                >
+                  {stops.map(s => <option key={s.stop_id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Quick 1-Click Delhi OD Presets */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Quick Delhi Pairs:</span>
+              {[
+                { label: '🏢 CP ➔ AIIMS', o: 'Connaught Place', d: 'AIIMS' },
+                { label: '✈️ Dwarka ➔ CP', o: 'Dwarka Sec-21', d: 'Connaught Place' },
+                { label: '🏰 Rohini ➔ AIIMS', o: 'Rohini Sec-3', d: 'AIIMS' },
+                { label: '🌉 ISBT ➔ Anand Vihar', o: 'ISBT Kashmere Gate', d: 'Anand Vihar ISBT' },
+                { label: '🏛️ Janakpuri ➔ ITO', o: 'Janakpuri', d: 'ITO' },
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => { setOrigin(p.o); setDestination(p.d); }}
+                  style={{
+                    background: (origin === p.o && destination === p.d) ? 'rgba(255, 107, 53, 0.35)' : 'rgba(30, 41, 59, 0.6)',
+                    border: `1px solid ${(origin === p.o && destination === p.d) ? '#ff6b35' : 'rgba(255, 255, 255, 0.08)'}`,
+                    color: (origin === p.o && destination === p.d) ? '#ff9933' : '#cbd5e1',
+                    padding: '4px 10px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer'
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* High-Level Corridor Branching KPI Banner */}
+          {branchData && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px 18px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>BUSES RUNNING IN BETWEEN</span>
+                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#38bdf8', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                  {branchData.total_buses_in_transit} buses
+                </div>
+                <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Live GPS tracked in corridor</span>
+              </div>
+
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px 18px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>CORRIDOR BRANCHES</span>
+                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#a855f7', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                  {branchData.total_branches} branches
+                </div>
+                <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Clustered parallel transit lines</span>
+              </div>
+
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px 18px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>RECOMMENDED FASTEST BRANCH</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {recommended ? recommended.name.split(':')[0] : 'N/A'}
+                </div>
+                <span style={{ fontSize: '0.74rem', color: '#34d399' }}>Next bus in ~{recommended?.next_bus_eta_mins} mins</span>
+              </div>
+
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px 18px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>DIRECT DISPLACEMENT</span>
+                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#ff9933', fontFamily: "'JetBrains Mono', monospace", marginTop: '4px' }}>
+                  {branchData.direct_distance_km} km
+                </div>
+                <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Great-circle point-to-point</span>
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Map Visualizer */}
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#ff9933' }}>
+                🗺️ Live Multi-Branch Corridor Map
+              </div>
+
+              {/* Branch Filter Tabs */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={() => setSelectedBranchId('ALL')}
+                  style={{
+                    background: selectedBranchId === 'ALL' ? '#ff6b35' : '#1e293b',
+                    color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '6px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  All Branches ({branchData?.total_buses_in_transit || 0})
+                </button>
+                {branches.map(b => (
+                  <button
+                    key={b.branch_id}
+                    onClick={() => setSelectedBranchId(b.branch_id)}
+                    style={{
+                      background: selectedBranchId === b.branch_id ? b.color : 'rgba(30, 41, 59, 0.8)',
+                      color: selectedBranchId === b.branch_id ? '#0f172a' : '#cbd5e1',
+                      border: `1px solid ${b.color}40`,
+                      padding: '5px 12px', borderRadius: '6px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer'
+                    }}
+                  >
+                    {b.name.split(':')[0]} ({b.total_active_buses})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <BranchMapContainer
+              origin={branchData?.origin}
+              destination={branchData?.destination}
+              branches={branches}
+              selectedBranchId={selectedBranchId}
+              onSelectBranch={setSelectedBranchId}
+            />
+          </div>
+
+          {/* Branched Route Families & Active Buses Cards */}
+          <div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f1f5f9', marginBottom: '14px' }}>
+              🚍 Branched Corridor Families & Buses Running in Between
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {branches.filter(b => selectedBranchId === 'ALL' || selectedBranchId === b.branch_id).map(branch => (
+                <div key={branch.branch_id} style={{
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  border: `1px solid ${branch.color}60`,
+                  borderLeft: `6px solid ${branch.color}`,
+                  borderRadius: '12px',
+                  padding: '20px',
+                  boxShadow: `0 4px 20px ${branch.color}15`
+                }}>
+                  {/* Branch Title & Metrics */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '14px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ background: branch.color, color: '#0f172a', fontWeight: 800, fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px' }}>
+                          {branch.branch_id}
+                        </span>
+                        <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f1f5f9' }}>
+                          {branch.name}
+                        </h3>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Via: <strong style={{ color: branch.color }}>{branch.via}</strong> • Associated Routes: <b>{branch.routes.join(', ')}</b>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>ACTIVE FLEET</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: branch.color }}>{branch.total_active_buses} buses</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>NEXT BUS</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#10b981' }}>~{branch.next_bus_eta_mins} mins</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>HEADWAY</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#38bdf8' }}>{branch.avg_headway_mins} mins</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>CORRIDOR SPEED</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ff9933' }}>{branch.corridor_speed_kmh} km/h</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Corridor Stop Sequence Track */}
+                  <div style={{ background: 'rgba(30, 41, 59, 0.45)', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700, whiteSpace: 'nowrap' }}>CORRIDOR TRACK:</span>
+                    {branch.stops.map((st, sIdx) => (
+                      <React.Fragment key={sIdx}>
+                        <span style={{
+                          background: sIdx === 0 ? '#10b981' : (sIdx === branch.stops.length - 1 ? '#ef4444' : '#334155'),
+                          color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', whiteSpace: 'nowrap'
+                        }}>
+                          {st}
+                        </span>
+                        {sIdx < branch.stops.length - 1 && <span style={{ color: '#64748b', fontSize: '0.8rem' }}>➔</span>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  {/* Table of Buses Running on this Branch between Point A & B */}
+                  {branch.buses && branch.buses.length > 0 ? (
+                    <div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '8px' }}>
+                        Active Buses In Transit on this Branch ({branch.buses.length}):
+                      </div>
+                      <div style={{ overflowX: 'auto', maxHeight: '280px', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                          <thead style={{ background: '#1e293b', position: 'sticky', top: 0 }}>
+                            <tr>
+                              <th style={{ padding: '8px 12px', color: '#ff9933' }}>Bus Unit</th>
+                              <th style={{ padding: '8px 12px', color: '#ff9933' }}>Route</th>
+                              <th style={{ padding: '8px 12px', color: '#ff9933' }}>Velocity</th>
+                              <th style={{ padding: '8px 12px', color: '#ff9933', minWidth: '160px' }}>Corridor Progress (A ➔ B)</th>
+                              <th style={{ padding: '8px 12px', color: '#ff9933' }}>Dist to Dest</th>
+                              <th style={{ padding: '8px 12px', color: '#ff9933' }}>Live ETA</th>
+                              <th style={{ padding: '8px 12px', color: '#ff9933' }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {branch.buses.map((b, bIdx) => {
+                              const isNext = bIdx === 0;
+                              return (
+                                <tr key={b.bus_id + bIdx} style={{
+                                  borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                                  background: isNext ? `${branch.color}12` : (bIdx % 2 === 0 ? 'rgba(15, 23, 42, 0.4)' : 'transparent')
+                                }}>
+                                  <td style={{ padding: '8px 12px', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>
+                                    {isNext && <span style={{ color: '#10b981', marginRight: '4px' }}>⚡</span>}
+                                    {b.bus_id}
+                                  </td>
+                                  <td style={{ padding: '8px 12px', color: '#38bdf8', fontWeight: 600 }}>{b.route_id}</td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    <span style={{ fontWeight: 700, color: b.speed_kmh >= 20 ? '#10b981' : (b.speed_kmh >= 8 ? '#f59e0b' : '#ef4444') }}>
+                                      {b.speed_kmh} km/h
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ flex: 1, height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
+                                        <div style={{ width: `${b.progress_pct}%`, height: '100%', background: branch.color }} />
+                                      </div>
+                                      <span style={{ fontSize: '0.72rem', color: '#cbd5e1', minWidth: '35px' }}>{b.progress_pct}%</span>
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{b.dist_to_destination_km} km</td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    <span style={{
+                                      fontWeight: 800,
+                                      color: isNext ? '#10b981' : '#cbd5e1',
+                                      padding: isNext ? '2px 6px' : '0',
+                                      borderRadius: '4px',
+                                      background: isNext ? '#10b98120' : 'transparent'
+                                    }}>
+                                      {b.eta_to_dest_mins} mins
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    <span style={{
+                                      fontSize: '0.72rem', padding: '2px 8px', borderRadius: '10px',
+                                      background: b.status.includes('Near') ? '#10b98125' : (b.status.includes('Mid') ? '#38bdf825' : '#f59e0b25'),
+                                      color: b.status.includes('Near') ? '#34d399' : (b.status.includes('Mid') ? '#38bdf8' : '#fbbf24')
+                                    }}>
+                                      {b.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontStyle: 'italic', padding: '10px 0' }}>
+                      No buses detected mid-transit along this specific branch corridor right now.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
+
