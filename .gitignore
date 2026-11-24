@@ -25,4 +25,11 @@ node_modules/
 dist/
 .vite/
 
+# Archives & nested extraction
+delhiconnecthackathon-main/
+*.zip
+.env
+test_robust_plan.py
+
+
 

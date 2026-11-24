@@ -396,8 +396,16 @@
             <input
               type="text"
               value={search}
-              placeholder={placeholder || 'Type stop or metro...'}
+              placeholder={placeholder || 'Type stop, landmark or metro...'}
               onFocus={() => setIsOpen(true)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && filteredStops.length > 0) {
+                  const pick = filteredStops[0];
+                  onChange(pick.name);
+                  setSearch(pick.name);
+                  setIsOpen(false);
+                }
+              }}
               onChange={e => {
                 setSearch(e.target.value);
                 setIsOpen(true);
@@ -598,6 +606,153 @@
         }
       };
 
+      // Location Resolver: Resolves any stop name, alias (e.g. CP, AIIMS), GPS string, or map pin
+      const resolveLocationToCoords = (inputStr, clickPt) => {
+        if (!inputStr && clickPt && clickPt.length === 2) {
+          return { lat: clickPt[0], lon: clickPt[1], name: `GPS (${clickPt[0].toFixed(4)}, ${clickPt[1].toFixed(4)})` };
+        }
+        if (!inputStr) return null;
+
+        // If string indicates GPS coordinate, Location or Near
+        if (clickPt && clickPt.length === 2 && (inputStr.includes('GPS') || inputStr.includes('Location') || inputStr.includes('Near'))) {
+          return { lat: clickPt[0], lon: clickPt[1], name: inputStr };
+        }
+
+        // Direct coordinate pattern "28.6315, 77.2167"
+        const coordRegex = /(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/;
+        const cMatch = inputStr.match(coordRegex);
+        if (cMatch) {
+          let lat = parseFloat(cMatch[1]);
+          let lon = parseFloat(cMatch[2]);
+          if (lat > 70 && lon < 40) { const t = lat; lat = lon; lon = t; }
+          return { lat, lon, name: inputStr };
+        }
+
+        // Match against known Delhi bus stops
+        const q = inputStr.trim().toLowerCase();
+        let found = stops.find(s => s.name.toLowerCase() === q || s.stop_id.toLowerCase() === q);
+        if (found) return { lat: found.lat, lon: found.lon, name: found.name };
+
+        // Common Delhi Commuter Aliases & Acronyms
+        const ALIAS_MAP = {
+          'cp': 'Connaught Place',
+          'connaught': 'Connaught Place',
+          'rajiv chowk': 'Rajiv Chowk',
+          'aiims': 'AIIMS',
+          'isbt': 'ISBT Kashmere Gate',
+          'kashmere gate': 'ISBT Kashmere Gate',
+          'kg': 'ISBT Kashmere Gate',
+          'anand vihar': 'Anand Vihar ISBT',
+          'dwarka': 'Dwarka Sec-21',
+          'dwarka 21': 'Dwarka Sec-21',
+          'dwarka sec 21': 'Dwarka Sec-21',
+          'rohini': 'Rohini Sec-3',
+          'rohini 3': 'Rohini Sec-3',
+          'janakpuri': 'Janakpuri',
+          'ito': 'ITO',
+          'karol bagh': 'Karol Bagh',
+          'saket': 'Saket',
+          'hauz khas': 'Hauz Khas',
+          'nehru place': 'Nehru Place',
+          'lajpat nagar': 'Lajpat Nagar',
+          'dhaula kuan': 'Dhaula Kuan',
+          'punjabi bagh': 'Punjabi Bagh',
+          'red fort': 'Red Fort',
+          'chandni chowk': 'Chandni Chowk',
+          'india gate': 'India Gate',
+          'botanical': 'Botanical Garden',
+          'botanical garden': 'Botanical Garden',
+          'airport': 'Dwarka Sec-21',
+          'palam': 'Palam',
+          'rithala': 'Rithala',
+          'pitampura': 'Pitampura',
+          'munirka': 'Munirka',
+          'rk puram': 'RK Puram',
+          'vasant kunj': 'Vasant Kunj',
+          'sarai kale khan': 'Sarai Kale Khan ISBT',
+          'ashram': 'Ashram',
+          'patel nagar': 'Patel Nagar',
+          'naraina': 'Naraina Vihar',
+        };
+        if (ALIAS_MAP[q]) {
+          found = stops.find(s => s.name.toLowerCase() === ALIAS_MAP[q].toLowerCase());
+          if (found) return { lat: found.lat, lon: found.lon, name: found.name };
+        }
+
+        // Substring matching
+        found = stops.find(s => s.name.toLowerCase().includes(q) || q.includes(s.name.toLowerCase()));
+        if (found) return { lat: found.lat, lon: found.lon, name: found.name };
+
+        // Fallback to clickPoint if present
+        if (clickPt && clickPt.length === 2) {
+          return { lat: clickPt[0], lon: clickPt[1], name: inputStr };
+        }
+        return null;
+      };
+
+      // Geolocation: Detect User's Real Location
+      const handleUseMyLocation = () => {
+        if (!navigator.geolocation) {
+          addToast('Geolocation is not supported in this browser.', '⚠️');
+          return;
+        }
+        addToast('Detecting your GPS location in Delhi...', '📡');
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const uLat = pos.coords.latitude;
+            const uLon = pos.coords.longitude;
+            let nearestStop = null;
+            let minDist = Infinity;
+            stops.forEach(s => {
+              const d = calcHaversine(uLat, uLon, s.lat, s.lon);
+              if (d < minDist) { minDist = d; nearestStop = s; }
+            });
+
+            const locLabel = (nearestStop && minDist < 1500)
+              ? `📍 My Location (${nearestStop.name} ~${Math.round(minDist)}m)`
+              : `📍 My Location (${uLat.toFixed(4)}, ${uLon.toFixed(4)})`;
+
+            setSelectedSrc(locLabel);
+            setClickPoints(prev => ({ start: [uLat, uLon], end: prev.end }));
+            addToast(`Location set! Nearest bus stop: ${nearestStop ? nearestStop.name : 'Delhi Transport'}`, '🟢');
+            playChime('success');
+
+            const destPt = resolveLocationToCoords(selectedDst, clickPoints.end);
+            if (destPt) {
+              handlePlanRoute(uLat, uLon, destPt.lat, destPt.lon, locLabel, destPt.name);
+            }
+          },
+          (err) => {
+            const cp = stops.find(s => s.name === 'Connaught Place') || stops[0];
+            setSelectedSrc(cp.name);
+            setClickPoints(prev => ({ start: [cp.lat, cp.lon], end: prev.end }));
+            addToast(`GPS unavailable (${err.message}). Defaulted to ${cp.name}.`, 'ℹ️');
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      };
+
+      // Handle Compute Route Click with Foolproof Validation
+      const handleComputeClick = () => {
+        const startPt = resolveLocationToCoords(selectedSrc, clickPoints.start);
+        const endPt = resolveLocationToCoords(selectedDst, clickPoints.end);
+
+        if (!startPt && !endPt) {
+          addToast('Please set Origin & Destination (click map or search stops)', '⚠️');
+          return;
+        }
+        if (!startPt) {
+          addToast('Please select a valid Origin (search stop, click map, or use My Location)', '⚠️');
+          return;
+        }
+        if (!endPt) {
+          addToast('Please select a valid Destination (search stop or click map)', '⚠️');
+          return;
+        }
+
+        handlePlanRoute(startPt.lat, startPt.lon, endPt.lat, endPt.lon, startPt.name, endPt.name);
+      };
+
       // Plan Route
       const handlePlanRoute = async (sLat, sLon, eLat, eLon, sName = selectedSrc, dName = selectedDst) => {
         setClickPoints({ start: [sLat, sLon], end: [eLat, eLon] });
@@ -759,17 +914,29 @@
         return () => clearInterval(timer);
       }, []);
 
-      // Click to route on map
+      // Click to route on map with smart nearest-stop snapping
       const handleMapClick = (lat, lon) => {
+        let nearestStop = null;
+        let minDist = Infinity;
+        stops.forEach(s => {
+          const d = calcHaversine(lat, lon, s.lat, s.lon);
+          if (d < minDist) { minDist = d; nearestStop = s; }
+        });
+
+        const locLabel = (nearestStop && minDist < 600)
+          ? `📍 Near ${nearestStop.name} (${Math.round(minDist)}m)`
+          : `📍 GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+
         setClickPoints(prev => {
           if (!prev.start || (prev.start && prev.end)) {
             setRoute(null);
-            setSelectedSrc(`GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`);
-            addToast('Origin selected on map! Now click destination.', '🟢');
+            setSelectedSrc(locLabel);
+            addToast(`🟢 Origin set: ${locLabel}. Now click Destination on the map!`, '🟢');
             return { start: [lat, lon], end: null };
           } else {
-            setSelectedDst(`GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`);
-            handlePlanRoute(prev.start[0], prev.start[1], lat, lon);
+            setSelectedDst(locLabel);
+            addToast(`🔴 Destination set: ${locLabel}. Calculating optimal route...`, '⚡');
+            handlePlanRoute(prev.start[0], prev.start[1], lat, lon, selectedSrc, locLabel);
             return { start: prev.start, end: [lat, lon] };
           }
         });
@@ -1198,36 +1365,44 @@
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <StopAutocomplete
-                      label="🟢 Boarding Stop (Origin)"
-                      value={selectedSrc}
-                      onChange={val => setSelectedSrc(val)}
-                      stops={stops}
-                      placeholder="Search origin stop..."
-                      icon="🟢"
-                    />
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>🟢 Boarding Stop (Origin)</span>
+                        <button
+                          type="button"
+                          onClick={handleUseMyLocation}
+                          style={{
+                            background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)',
+                            color: '#10b981', padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem',
+                            fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                          }}
+                        >
+                          📍 My Location
+                        </button>
+                      </div>
+                      <StopAutocomplete
+                        label=""
+                        value={selectedSrc}
+                        onChange={val => setSelectedSrc(val)}
+                        stops={stops}
+                        placeholder="Search origin, metro, or click map..."
+                        icon="🟢"
+                      />
+                    </div>
 
                     <StopAutocomplete
                       label="🔴 Alighting Stop (Destination)"
                       value={selectedDst}
                       onChange={val => setSelectedDst(val)}
                       stops={stops}
-                      placeholder="Search destination stop..."
+                      placeholder="Search destination, metro, or click map..."
                       icon="🔴"
                     />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                     <button
-                      onClick={() => {
-                        const sObj = stops.find(s => s.name === selectedSrc);
-                        const dObj = stops.find(s => s.name === selectedDst);
-                        if (sObj && dObj) {
-                          handlePlanRoute(sObj.lat, sObj.lon, dObj.lat, dObj.lon, sObj.name, dObj.name);
-                        } else {
-                          addToast('Please select valid Origin and Destination stops', '⚠️');
-                        }
-                      }}
+                      onClick={handleComputeClick}
                       style={{
                         flex: 1, background: 'linear-gradient(135deg, #FF6B35 0%, #e85d04 100%)',
                         color: '#fff', border: 'none', padding: '10px 14px', borderRadius: '8px',
@@ -1904,6 +2079,20 @@
       return (
         <div style={{ position: 'relative', width: '100%', height: '620px', borderRadius: '14px', overflow: 'hidden' }}>
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+          {/* Floating Commuter Map Instruction Guide */}
+          <div style={{
+            position: 'absolute', top: '14px', left: '50%', transform: 'translateX(-50%)',
+            background: 'var(--bg-card)', border: '1px solid var(--border-accent)',
+            borderRadius: '24px', padding: '6px 16px', backdropFilter: 'blur(12px)',
+            zIndex: 1000, fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-main)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', gap: '8px',
+            pointerEvents: 'none'
+          }}>
+            <span>🟢 Click 1: Origin</span>
+            <span style={{ color: 'var(--primary-orange)' }}>➔</span>
+            <span>🔴 Click 2: Destination</span>
+          </div>
 
           {/* Floating Tracking HUD */}
           {activeTrackedBusObj && (

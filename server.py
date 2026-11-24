@@ -153,10 +153,12 @@ async def on_startup():
 # API Request / Response Models
 # ---------------------------------------------------------------------------
 class RouteRequest(BaseModel):
-    start_lat: float = Field(..., description="Latitude of starting point")
-    start_lon: float = Field(..., description="Longitude of starting point")
-    end_lat: float = Field(..., description="Latitude of destination")
-    end_lon: float = Field(..., description="Longitude of destination")
+    start_lat: float = Field(0.0, description="Latitude of starting point")
+    start_lon: float = Field(0.0, description="Longitude of starting point")
+    end_lat: float = Field(0.0, description="Latitude of destination")
+    end_lon: float = Field(0.0, description="Longitude of destination")
+    origin_name: Optional[str] = None
+    destination_name: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -391,51 +393,88 @@ def get_traffic_predictions():
 
 @app.post("/api/route")
 def calculate_optimal_route(req: RouteRequest):
-    """Calculate the fastest dynamic A* route between two GPS coordinates."""
+    """Calculate the fastest dynamic A* route between two GPS coordinates or stop names."""
     try:
+        s_lat, s_lon = req.start_lat, req.start_lon
+        e_lat, e_lon = req.end_lat, req.end_lon
+
+        # Auto-resolve from names if coordinates are zero
+        if s_lat == 0.0 and s_lon == 0.0 and req.origin_name:
+            st = next((s for s in BUS_STOPS if req.origin_name.lower() in s["name"].lower()), None)
+            if st:
+                s_lat, s_lon = st["lat"], st["lon"]
+        if e_lat == 0.0 and e_lon == 0.0 and req.destination_name:
+            st = next((s for s in BUS_STOPS if req.destination_name.lower() in s["name"].lower()), None)
+            if st:
+                e_lat, e_lon = st["lat"], st["lon"]
+
+        # Auto-swap if lat/lon were flipped (Delhi: lat ~ 28.5, lon ~ 77.2)
+        if s_lat > 70.0 and s_lon < 40.0:
+            s_lat, s_lon = s_lon, s_lat
+        if e_lat > 70.0 and e_lon < 40.0:
+            e_lat, e_lon = e_lon, e_lat
+
         route = plan_route(
             state.routing_graph,
-            req.start_lat,
-            req.start_lon,
-            req.end_lat,
-            req.end_lon,
+            s_lat,
+            s_lon,
+            e_lat,
+            e_lon,
         )
         geojson = get_route_geojson(route)
 
-        eta = route.get("eta_minutes", 0.0)
-        dist = route.get("distance_km", 0.0)
+        eta = route.get("eta_minutes", 1.0)
+        dist = route.get("distance_km", 0.05)
         eff_spd = (dist / (eta / 60.0)) if eta > 0 else 30.0
 
         # DTC standard transit fare calculation (<4km: Rs.10, 4-10km: Rs.15, >10km: Rs.25)
-        fare = 10 if dist < 4.0 else (15 if dist <= 10.0 else 25)
+        segs_list = route.get("segments", [])
+        if segs_list == ["pedestrian_transfer"] or dist < 0.4 and segs_list == ["pedestrian_transfer"]:
+            fare = 0
+        else:
+            fare = 10 if dist < 4.0 else (15 if dist <= 10.0 else 25)
 
         # Carbon footprint offset (avg car emits ~140g CO2/km vs ~30g/passenger-km on DTC CNG/EV bus)
         carbon_saved = round(dist * 0.11, 2)
 
         # Generate turn-by-turn commuter itinerary
-        segs_list = route.get("segments", [])
         itinerary = []
-        if segs_list:
+        if segs_list == ["pedestrian_transfer"]:
             itinerary.append({
                 "step": 1,
                 "icon": "🚶",
                 "type": "walk",
-                "instruction": f"Proceed to nearest corridor at {segs_list[0]}",
-                "meta": "Walk ~2 mins",
+                "instruction": f"Direct pedestrian transfer between proximate locations ({dist:.2f} km)",
+                "meta": f"Walk ~{eta:.0f} mins",
             })
-            for idx, s_name in enumerate(segs_list, start=2):
+            itinerary.append({
+                "step": 2,
+                "icon": "🏁",
+                "type": "arrive",
+                "instruction": "Destination arrived",
+                "meta": "Arrived",
+            })
+        elif segs_list:
+            itinerary.append({
+                "step": 1,
+                "icon": "🚶",
+                "type": "walk",
+                "instruction": f"Board bus / transit corridor at {segs_list[0]}",
+                "meta": "Boarding Point",
+            })
+            for idx, s_name in enumerate(segs_list[1:], start=2):
                 itinerary.append({
                     "step": idx,
                     "icon": "🚌",
                     "type": "transit",
-                    "instruction": f"Transit via {s_name}",
+                    "instruction": f"Transit along {s_name}",
                     "meta": "In Transit",
                 })
             itinerary.append({
-                "step": len(segs_list) + 2,
+                "step": len(segs_list) + 1,
                 "icon": "🏁",
                 "type": "arrive",
-                "instruction": f"Arrive at destination ({dist:.1f} km total)",
+                "instruction": f"Alight at destination ({dist:.1f} km total journey)",
                 "meta": f"ETA ~{eta:.0f} mins",
             })
 
@@ -453,8 +492,8 @@ def calculate_optimal_route(req: RouteRequest):
             "fare_inr": fare,
             "carbon_saved_kg": carbon_saved,
             "itinerary": itinerary,
-            "segments_count": len(route.get("segments", [])),
-            "segments": route.get("segments", []),
+            "segments_count": len(segs_list),
+            "segments": segs_list,
             "geojson": geojson,
             "route_latlngs": route_latlngs,
         }
